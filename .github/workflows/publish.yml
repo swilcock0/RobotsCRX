@@ -1,9 +1,7 @@
 name: Publish
 
+# RobotsCRX: publishing targets the upstream package and releases, so it only runs on demand.
 on:
-  push:
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       commands:

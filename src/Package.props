@@ -2,11 +2,11 @@
 
   <PropertyGroup>
     <Product>Robots</Product>
-    <Version>2.5.0-crx.2</Version>
+    <Version>2.5.0-crx.3</Version>
     <Authors>Robots Authors</Authors>
     <Description>Create and simulate ABB, KUKA, UR, Staubli, Franka Emika, Doosan, Fanuc, Igus, and Jaka robot programs in Rhino 8, Grasshopper, and .NET.</Description>
     <PackageTags>Robots;Robotics;ABB;KUKA;UR;Staubli;FrankaEmika;Doosan;Fanuc;Igus;Jaka</PackageTags>
-    <PackageProjectUrl>https://github.com/visose/robots</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/swilcock0/RobotsCRX</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Icon>robots-icon.png</Icon>
     <ReleaseNotes>RELEASE</ReleaseNotes>
@@ -15,7 +15,7 @@
     <Copyright>Copyright (c) 2015-$(CurrentYear) $(Authors)</Copyright>
     <Company>$(Authors) - $(PackageProjectUrl)</Company>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/visose/robots.git</RepositoryUrl>
+    <RepositoryUrl>https://github.com/swilcock0/RobotsCRX.git</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,4 +1,10 @@
-﻿- version: 2.5.0-crx.2
+﻿- version: 2.5.0-crx.3
+  changes:
+  - Renamed the package to RobotsCRX, a fork of Robots by Vicente Soler (visose).
+  - Added the license and notices for the bundled FANUC CRX meshes (Apache-2.0).
+  - Added build/pack-crx.ps1 to build the RobotsCRX package.
+
+- version: 2.5.0-crx.2
   changes:
   - Bundled the FANUC CRX robot library with the plug-in, so it appears in Load Robot System without copying files.
 
