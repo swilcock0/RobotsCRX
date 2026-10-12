@@ -1,4 +1,12 @@
-﻿- version: 2.4.3
+﻿- version: 2.5.0-crx.1
+  changes:
+  - Added FANUC CRX support: geometry-based Fanuc solver selection and a CRX robot library with its URDF converter.
+  - Added streaming to FANUC controllers with Stream Motion (J519) through the Remote Connection component.
+  - Added the Read Joints component to read the current joints from the controller.
+  - Fixed inverse kinematics giving up on some reachable non-spherical wrist targets.
+  - Fixed saving the local library folder when Robots is not installed through the package manager.
+
+- version: 2.4.3
   changes:
   - Fixed inverse kinematics near wrist singularities.
   - Fixed fly-by simulation in moving frames and multi-axis track offsets.
