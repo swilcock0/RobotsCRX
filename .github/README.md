@@ -13,9 +13,9 @@
 **[RobotsCRX](#robotscrx) •
 [About](#about) •
 [Install](#install) •
-[Docs](../../../wiki) •
+[Docs](https://github.com/visose/Robots/wiki) •
 [Support](#support) •
-[Sponsors](#sponsors)**
+[Supporting Robots](#supporting-robots)**
 
 </div>
 
@@ -55,15 +55,15 @@ Supported manufacturers include **ABB**, **KUKA**, **UR**, **Staubli**, **Franka
 
 ## Install
 
-> If upgrading from an old version check [here](../../../wiki/home#Upgrading-from-an-older-version).
+> If upgrading from an old version check [here](https://github.com/visose/Robots/wiki/home#Upgrading-from-an-older-version).
 
 ### Grasshopper plugin
 
-1. Install in **Rhino 8** for **Windows** or **macOS** using the `_PackageManager` command, search for `Robots`.
+1. Install **RobotsCRX** in **Rhino 8** for **Windows** or **macOS** as described in [Install RobotsCRX](#install-robotscrx).
 1. Restart **Rhino** and open **Grasshopper**. There should be a new tab in **Grasshopper** named `Robots`.
 1. Install a robot library by clicking on the `Libraries` button of a `Load robot system` component.
    > The robots from the library should appear in a **value list** connected to a `Load robot system` component.
-1. Read the [docs](../../../wiki) for more info.
+1. Read the [docs](https://github.com/visose/Robots/wiki) for more info.
 1. Check the [samples](../samples/).
    > When opening a sample file, a dialog box might pop up with an assembly not found message. You can close this without fixing the path, it will automatically get fixed after the sample file is loaded.
 
@@ -75,18 +75,17 @@ Supported manufacturers include **ABB**, **KUKA**, **UR**, **Staubli**, **Franka
 
 ## Support
 
-### 🆓 [Community](https://github.com/visose/Robots/discussions)
+### RobotsCRX
 
-Ask any questions in our discussions forum.
+For the CRX robots, Stream Motion streaming or Read Joints, open an [issue](https://github.com/swilcock0/RobotsCRX/issues) in this repository.
+
+### 🆓 [Robots community](https://github.com/visose/Robots/discussions)
+
+For questions about Robots itself, use the upstream discussions forum.
 ### 💼 [Commercial](https://visose.com/robots)
 
-Partner with the creators of Robots to ensure you have the best support for your organization. You can find more information [here](https://visose.com/robots).
+Commercial support for Robots is offered by its creators. You can find more information [here](https://visose.com/robots).
 
-## Sponsors
+## Supporting Robots
 
-The continued development and maintenance of this project is made possible by our sponsors and commercial partners. Become a sponsor by purchasing [commercial support](https://visose.com/robots), or by donating via [GitHub Sponsors](https://github.com/sponsors/visose) or [PayPal](https://visose.com/paypal).
-
-### Our top sponsors
-
-[![B-made](../docs/Sponsors/b-made-light.png)](https://www.ucl.ac.uk/bartlett/about-us/our-resources/b-made-bartlett-workshops#gh-light-mode-only)
-[![B-made](../docs/Sponsors/b-made-dark.png)](https://www.ucl.ac.uk/bartlett/about-us/our-resources/b-made-bartlett-workshops#gh-dark-mode-only)
+Robots, which RobotsCRX builds on, is made possible by its sponsors and commercial partners, listed in the [Robots README](https://github.com/visose/Robots#sponsors). RobotsCRX has no sponsors of its own. If you find it useful, please support the original project by purchasing [commercial support](https://visose.com/robots), or by donating via [GitHub Sponsors](https://github.com/sponsors/visose) or [PayPal](https://visose.com/paypal).
