@@ -61,7 +61,10 @@ public class RobotFanuc : RobotArm
 public class SystemFanuc : IndustrialSystem
 {
     internal SystemFanuc(SystemAttributes attributes, List<MechanicalGroup> mechanicalGroups)
-        : base(attributes, mechanicalGroups) { }
+        : base(attributes, mechanicalGroups)
+    {
+        Remote = new RemoteFanuc();
+    }
 
     public override Manufacturers Manufacturer => Manufacturers.Fanuc;
     protected override IPostProcessor GetDefaultPostprocessor() => new FanucPostProcessor();

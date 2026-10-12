@@ -17,6 +17,7 @@ public class Remote() : Component(
             IP address of the robot controller.
             - ABB: If omitted, Robots uses the first controller discovered by the ABB helper.
             - UR: If an IP address is supplied, Robots uses the secondary client interface to stream the program and run play and pause commands. To use the FTP back end instead, specify the IP as 'sftp://ip'. This uploads the program as a .urp file to the controller using the FTP server, then loads it through the dashboard interface. You can override the default username, password, or programs folder with 'sftp://user:pass@ip/path/to/programs'.
+            - Fanuc: Streams the program with Stream Motion (J519). Upload checks it against the controller's limits; Play starts the STREAM_MOTN program through RMI and streams it, first moving slowly to the program start if needed; Pause stops the robot smoothly, and Play restarts from the beginning.
             """.UseCRLF();
 
         _ = pManager.AddParameter(new ProgramParameter(), "Program", "P", "Robot program to upload or run.", GH_ParamAccess.item);

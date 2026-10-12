@@ -36,6 +36,7 @@ static class IconSet
         "PostProcessorParameter",
         "ProgramParameter",
         "PulseDO",
+        "ReadJoints",
         "Remote",
         "RobotSystemParameter",
         "SaveProgram",
@@ -240,6 +241,16 @@ static class IconSet
                 break;
             case "PulseDO":
                 DrawWave(g, Points(8, 30, 8, 19, 18, 19, 18, 30, 30, 30, 30, 19, 40, 19, 40, 30), Orange, 2.8);
+                break;
+            case "ReadJoints":
+                DrawRobot(g, 2, 5, 0.96);
+
+                foreach (var offset in new[] { 4.0, 7.0 })
+                {
+                    g.Arc((11 - offset, 14 - offset, 11 + offset, 14 + offset), 210, 330, Orange, 2.0);
+                    g.Arc((11 - offset, 14 - offset, 11 + offset, 14 + offset), 210, 330, Ink, 0.7);
+                }
+
                 break;
             case "Remote":
                 g.Line(Ink, 3.0, P(24, 38), P(24, 22));
