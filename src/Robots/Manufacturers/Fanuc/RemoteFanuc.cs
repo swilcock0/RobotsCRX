@@ -11,6 +11,9 @@ namespace Robots;
 public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
 {
     const string StreamProgram = "STREAM_MOTN";
+
+    // FANUC ROS 2 Driver documentation: software options, version, network and controller status.
+    const string ControllerSetupUrl = "https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/quick_start/quick_start.html#robot-controller-setup";
     const int JointCount = 6;
     const double StartTolerance = 0.01;
     const double MaximumApproach = 20;
@@ -286,7 +289,7 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
                 return status;
 
             if (DateTime.UtcNow > deadline)
-                throw new TimeoutException($"Stream Motion is not ready. Check that {StreamProgram} can run and the controller is in AUTO without alarms.");
+                throw new TimeoutException($"Stream Motion is not ready. Check the controller against FANUC's setup checks: {ControllerSetupUrl}");
         }
     }
 

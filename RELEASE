@@ -1,20 +1,14 @@
-﻿- version: 2.5.0-crx.3
+﻿- version: 0.1.0
   changes:
-  - Renamed the package to RobotsCRX, a fork of Robots by Vicente Soler (visose).
-  - Added the license and notices for the bundled FANUC CRX meshes (Apache-2.0).
-  - Added build/pack-crx.ps1 to build the RobotsCRX package.
-
-- version: 2.5.0-crx.2
-  changes:
-  - Bundled the FANUC CRX robot library with the plug-in, so it appears in Load Robot System without copying files.
-
-- version: 2.5.0-crx.1
-  changes:
-  - Added FANUC CRX support: geometry-based Fanuc solver selection and a CRX robot library with its URDF converter.
+  - First RobotsCRX release, based on Robots 2.4.3 by Vicente Soler (visose).
+  - Added FANUC CRX robots (CRX-3iA, CRX-5iA, CRX-10iA, CRX-10iA/L, CRX-10iA/L Paint, CRX-20iA/L, CRX-30iA), bundled with the plug-in and converted from FANUC’s fanuc_description (Apache-2.0).
+  - Fanuc robots now choose the inverse kinematics solver from their geometry, so CRX arms use the non-spherical wrist solver.
   - Added streaming to FANUC controllers with Stream Motion (J519) through the Remote Connection component.
   - Added the Read Joints component to read the current joints from the controller.
+  - When Stream Motion is not ready, the error links FANUC’s controller setup checks.
   - Fixed inverse kinematics giving up on some reachable non-spherical wrist targets.
   - Fixed saving the local library folder when Robots is not installed through the package manager.
+  - Ships the Robots license and notices, and FANUC’s Apache-2.0 license and notice for the CRX meshes.
 
 - version: 2.4.3
   changes:

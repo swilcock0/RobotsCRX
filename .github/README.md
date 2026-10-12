@@ -31,6 +31,8 @@ The fork adds:
 
 > Streaming moves a real robot. Test with low speeds and override, with the teach pendant at hand.
 
+> Streaming needs the controller set up as for FANUC’s ROS 2 driver. See its [system requirements](https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/environment/system_requirements.html) for the software options and version, and its [robot controller setup](https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/quick_start/quick_start.html#robot-controller-setup) for the checks before connecting.
+
 > Like the other Fanuc robots in Robots, a CRX’s origin (the plane given to `Load robot system`) is FANUC’s world frame at the height of the J2 axis, not the mounting surface: 161 mm above it for the CRX-3iA, 185 mm for the CRX-5iA, 245 mm for the CRX-10iA, CRX-10iA/L and CRX-20iA/L, 370 mm for the CRX-30iA and 465 mm for the CRX-10iA/L Paint. Cartesian targets then match the controller’s world coordinates.
 
 ### Install RobotsCRX
@@ -38,8 +40,11 @@ The fork adds:
 1. Uninstall `Robots` in the Rhino 8 `_PackageManager` if it is installed; RobotsCRX replaces it.
 1. Download the `.yak` file from the [latest release](https://github.com/swilcock0/RobotsCRX/releases) and drag it onto the Rhino window, or run `yak install <file>.yak`.
 1. Restart Rhino and open Grasshopper. The CRX robots appear in the `Load robot system` list.
+1. To stream to a robot, set up the controller following FANUC’s ROS 2 driver documentation: the [system requirements](https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/environment/system_requirements.html) (Stream Motion J519 and Remote Motion R912, or S636, and the controller software version) and the [robot controller setup](https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/quick_start/quick_start.html#robot-controller-setup) (network and controller status). RobotsCRX starts the controller’s `STREAM_MOTN` program itself, as FANUC’s driver does.
 
 To build the package yourself, run `build/pack-crx.ps1` (requires the .NET SDK in `global.json` and Rhino 8).
+
+RobotsCRX has its own version numbers. Each release notes the Robots version it is based on; versions below 1.0 have not yet been validated on a real robot.
 
 ### Acknowledgements
 
