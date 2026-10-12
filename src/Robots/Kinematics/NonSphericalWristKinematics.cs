@@ -29,6 +29,10 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
 
     static readonly string[] NearSingularityErrors = ["Target near singularity."];
 
+    // First chart of each opposite pair tried after the axis-aligned pairs.
+    static readonly double[] FallbackChartPhases =
+        [PI / 4, 3 * PI / 4, PI / 8, 3 * PI / 8, 5 * PI / 8, 7 * PI / 8];
+
     readonly Joint[] _joints = robot.Joints;
     readonly double _maxReach = GetChainLength(robot.Joints);
     readonly double _geometryScale = GetGeometryScale(robot.Joints);
@@ -322,6 +326,24 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
         }
 
         bool chartsCovered = primaryCoverage || alternateCoverage;
+
+        // A few targets lose deflation precision in a chart of both axis-aligned
+        // pairs; rotated pairs are conditioned differently.
+        foreach (double phase in FallbackChartPhases)
+        {
+            if (chartsCovered)
+                break;
+
+            chartsCovered = AddChartPair(
+                scaledA,
+                scaledD,
+                scaledTarget,
+                phase,
+                phase - PI,
+                joint6Values,
+                tangentSeeds,
+                out _);
+        }
 
         if (!chartsCovered)
         {

@@ -105,6 +105,24 @@ class NonSphericalWristKinematicsTests
     }
 
     [Test]
+    public void RotatedChartsResolveIllConditionedTargets()
+    {
+        // Each pose has a chart that cannot be deflated in both axis-aligned pairs;
+        // the first needs the diagonal pairs, the second the finer chart grid.
+        (Func<RobotSystem> Factory, double[] Joints)[] cases =
+        [
+            (TestRobots.FanucCrx10, [-2.68254280166395, 0.7854652304046263, 3.0968536193571783, 1.4318782533523087, -1.560657346556901, 2.9909567056020645]),
+            (TestRobots.AbbGofa10, [1.8099342166449528, 3.31857684790001, -1.3392838510701957, -2.1503634813002233, -2.539099444957328, 2.0262134885026013])
+        ];
+
+        foreach (var (factory, joints) in cases)
+        {
+            var robot = GetRobot(factory());
+            _ = AssertRoundTrip(robot, (NonSphericalWristKinematics)robot.Solver, joints, previous: null, robot.Model);
+        }
+    }
+
+    [Test]
     public void RandomPosesValidateEveryBranch()
     {
         foreach (var (factory, seed, _) in Cases)
