@@ -20,7 +20,16 @@ public class RobotFanuc : RobotArm
     internal RobotFanuc(string model, double payload, MechanismBase mechanismBase, Joint[] joints)
         : base(model, Manufacturers.Fanuc, payload, mechanismBase, joints) { }
 
-    private protected override SphericalWristKinematics CreateSolver() => new(this);
+    private protected override MechanismKinematics CreateSolver()
+    {
+        if (SphericalWristKinematics.Supports(this))
+            return new SphericalWristKinematics(this);
+
+        if (NonSphericalWristKinematics.Supports(this))
+            return new NonSphericalWristKinematics(this);
+
+        return new NumericalKinematics(this);
+    }
 
     public override double DegreeToRadian(double degree, int i)
     {

@@ -198,6 +198,26 @@ static class TestRobots
         </RobotSystem>
         """;
 
+    // DH values and ranges from fanuc_description's crx10ia_urdf_macro.xacro, with the
+    // base plane at the J2 height like the Fanuc library.
+    const string FanucCrx10Xml = """
+        <RobotSystem name="CRX10iATest" manufacturer="Fanuc">
+          <Mechanisms>
+            <RobotArm model="CRX10iATest" manufacturer="Fanuc" payload="10">
+              <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0"/>
+              <Joints>
+                <Revolute number="1" a="0" d="0" minrange="-190" maxrange="190" maxspeed="120"/>
+                <Revolute number="2" a="540" d="0" minrange="-179.9" maxrange="179.9" maxspeed="120"/>
+                <Revolute number="3" a="0" d="0" minrange="-71" maxrange="251" maxspeed="180"/>
+                <Revolute number="4" a="0" d="540" minrange="-190" maxrange="190" maxspeed="180"/>
+                <Revolute number="5" a="0" d="150" minrange="-179.9" maxrange="179.9" maxspeed="180"/>
+                <Revolute number="6" a="0" d="160" minrange="-225" maxrange="225" maxspeed="180"/>
+              </Joints>
+            </RobotArm>
+          </Mechanisms>
+        </RobotSystem>
+        """;
+
     static readonly string FrankaPandaWithCustomExternalXml = FrankaPandaXml.Replace(
         "</RobotArm>",
         $"</RobotArm>{CustomExternalXml(Manufacturers.FrankaEmika, jointNumber: 8)}",
@@ -237,6 +257,8 @@ static class TestRobots
         Parse(PostProcessorXml(Manufacturers.Doosan, 6, external: CustomExternalXml(Manufacturers.Doosan)));
 
     public static RobotSystem FanucLrMate() => Parse(FanucLrMateXml);
+
+    public static RobotSystem FanucCrx10() => Parse(FanucCrx10Xml);
 
     public static RobotSystem SphericalRobot(Manufacturers manufacturer) =>
         Parse(AbbIrb120Xml.Replace("manufacturer=\"ABB\"", $"manufacturer=\"{manufacturer}\"", StringComparison.Ordinal));

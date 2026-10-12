@@ -9,13 +9,15 @@ class NonSphericalWristKinematicsTests
     [
         (TestRobots.AbbPowa1920, 1920, 0.0062625742039908085),
         (TestRobots.AbbGofa10, 15010, 0.07556903629345449),
-        (TestRobots.AbbGofa12, 15012, 0.09146244096169531)
+        (TestRobots.AbbGofa12, 15012, 0.09146244096169531),
+        (TestRobots.FanucCrx10, 10010, -0.07636254056293262)
     ];
 
     [Test]
-    public void AbbSolverSelectionUsesGeometry()
+    public void SolverSelectionUsesGeometry()
     {
         var spherical = GetRobot(TestRobots.AbbIrb120());
+        var fanucSpherical = GetRobot(TestRobots.FanucLrMate());
         var unsupported = GetRobot(TestRobots.AbbNumerical());
 
         Assert.Multiple(() =>
@@ -23,6 +25,7 @@ class NonSphericalWristKinematicsTests
             Assert.That(spherical.Solver, Is.TypeOf<SphericalWristKinematics>());
             Assert.That(SphericalWristKinematics.Supports(spherical), Is.True);
             Assert.That(NonSphericalWristKinematics.Supports(spherical), Is.False);
+            Assert.That(fanucSpherical.Solver, Is.TypeOf<SphericalWristKinematics>());
 
             foreach (var (factory, _, _) in Cases)
             {
@@ -53,6 +56,52 @@ class NonSphericalWristKinematicsTests
 
             Assert.That(SupportsAfter(joints => joints[0].D = double.NaN), Is.False, "finite DH");
         });
+    }
+
+    [Test]
+    public void FanucCrxMatchesUrdfForwardKinematics()
+    {
+        // Joint chain of fanuc_description's crx10ia_urdf_macro.xacro in millimeters,
+        // starting at the J2 height. URDF joint values are controller degrees.
+        var robot = GetRobot(TestRobots.FanucCrx10());
+        Random random = new(10);
+
+        for (int sample = 0; sample < 24; sample++)
+        {
+            double[] degrees = [.. Enumerable.Range(0, 6).Select(_ => random.NextDouble() * 340 - 170)];
+            double[] joints = [.. degrees.Select(robot.DegreeToRadian)];
+            var urdf = Rotation(Vector3d.ZAxis, degrees[0])
+                * Rotation(Vector3d.YAxis, degrees[1])
+                * Transform.Translation(0, 0, 540)
+                * Rotation(-Vector3d.YAxis, degrees[2])
+                * Rotation(-Vector3d.XAxis, degrees[3])
+                * Transform.Translation(540, 0, 0)
+                * Rotation(-Vector3d.YAxis, degrees[4])
+                * Transform.Translation(0, -150, 0)
+                * Rotation(-Vector3d.XAxis, degrees[5])
+                * Transform.Translation(160, 0, 0);
+
+            var flange = robot.Kinematics(new JointTarget(joints)).Planes[^1];
+            var origin = Point3d.Origin;
+            origin.Transform(urdf);
+            var normal = Vector3d.XAxis;
+            normal.Transform(urdf);
+            // Same flange convention as other Fanuc arms: X along -Z of the URDF flange.
+            var xAxis = -Vector3d.ZAxis;
+            xAxis.Transform(urdf);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(flange.Origin.DistanceTo(origin), Is.LessThan(1e-9), $"sample {sample}");
+                Assert.That((flange.Normal - normal).Length, Is.LessThan(1e-9), $"sample {sample}");
+                Assert.That((flange.XAxis - xAxis).Length, Is.LessThan(1e-9), $"sample {sample}");
+            });
+        }
+
+        static Transform Rotation(Vector3d axis, double degrees)
+        {
+            return Transform.Rotation(degrees * Math.PI / 180, axis, Point3d.Origin);
+        }
     }
 
     [Test]
@@ -765,9 +814,9 @@ class NonSphericalWristKinematicsTests
                     ? candidates.Where(candidate => candidate.Configuration == requested)
                     : candidates;
 
-                var expected = eligible
+                var ordered = eligible
                     .OrderBy(candidate => SquaredDifference(candidate.Joints, previous))
-                    .First();
+                    .ToArray();
 
                 InverseSolution actual;
 
@@ -783,6 +832,14 @@ class NonSphericalWristKinematicsTests
                 }
 
                 string message = $"{context}, configuration {configuration?.ToString() ?? "automatic"}";
+
+                // A J1 range wider than a turn with no shoulder offset gives equally close
+                // windings on the flipped shoulder branch; any of them is a valid selection.
+                double closest = SquaredDifference(ordered[0].Joints, previous);
+                var expected = ordered
+                    .TakeWhile(candidate => SquaredDifference(candidate.Joints, previous) - closest < 1e-9)
+                    .OrderBy(candidate => SquaredDifference(candidate.Joints, actual.Joints))
+                    .First();
 
                 Assert.Multiple(() =>
                 {
