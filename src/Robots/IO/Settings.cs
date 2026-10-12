@@ -56,6 +56,7 @@ public record Settings(string LocalLibraryPath)
     public static void Save(Settings settings)
     {
         var json = JsonSerializer.Serialize(settings, JsonOptions);
+        _ = Directory.CreateDirectory(PluginPath);
         File.WriteAllText(SettingsPath, json);
     }
 
