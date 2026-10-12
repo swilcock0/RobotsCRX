@@ -1,4 +1,8 @@
-﻿- version: 2.5.0-crx.1
+﻿- version: 2.5.0-crx.2
+  changes:
+  - Bundled the FANUC CRX robot library with the plug-in, so it appears in Load Robot System without copying files.
+
+- version: 2.5.0-crx.1
   changes:
   - Added FANUC CRX support: geometry-based Fanuc solver selection and a CRX robot library with its URDF converter.
   - Added streaming to FANUC controllers with Stream Motion (J519) through the Remote Connection component.
