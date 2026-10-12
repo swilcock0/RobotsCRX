@@ -27,7 +27,7 @@ try
         throw new ArgumentException("Usage: Robots.FanucCrx <fanuc_crx_description folder> [output folder]");
 
     string descriptionPath = Path.GetFullPath(args[0]);
-    string outputPath = Path.GetFullPath(args.Length > 1 ? args[1] : Path.Combine("artifacts", "fanuc-crx"));
+    string outputPath = Path.GetFullPath(args.Length > 1 ? args[1] : Path.Combine("src", "Robots.Grasshopper", "Resources", "Package", "libraries"));
     _ = Directory.CreateDirectory(outputPath);
 
     var models = definitions.Select(definition => new CrxModel(definition, descriptionPath)).ToArray();

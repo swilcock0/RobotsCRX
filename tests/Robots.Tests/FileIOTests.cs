@@ -8,6 +8,44 @@ namespace Robots.Tests;
 
 public class FileIOTests
 {
+    [Test]
+    public void BundledLibrariesAreNextToTheAssembly()
+    {
+        var folder = Path.GetDirectoryName(typeof(FileIO).Assembly.Location)!;
+        Assert.That(RobotLibrary.BundledPath, Is.EqualTo(Path.Combine(folder, "libraries")));
+    }
+
+    [Test]
+    public void BundledCrxLibraryLoadsEveryCell()
+    {
+        var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+
+        while (!File.Exists(Path.Combine(root.FullName, "Robots.slnx")))
+            root = root.Parent ?? throw new DirectoryNotFoundException("Repository root not found.");
+
+        var file = Path.Combine(root.FullName, "src", "Robots.Grasshopper", "Resources", "Package", "libraries", "Fanuc_CRX.xml");
+
+        var library = XElement.Load(file);
+        using var meshes = File3dm.Read(Path.ChangeExtension(file, ".3dm"));
+        var cells = library.Elements("RobotCell").ToArray();
+
+        Assert.That(cells, Has.Length.EqualTo(7));
+
+        foreach (var cell in cells)
+        {
+            var system = (IndustrialSystem)FileIO.ParseRobotSystem(cell.ToString(), Plane.WorldXY, meshes);
+            var robot = system.MechanicalGroups[0].Robot;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(robot.Solver, Is.TypeOf<NonSphericalWristKinematics>(), robot.Model);
+                Assert.That(system.Remote, Is.TypeOf<RemoteFanuc>(), robot.Model);
+                Assert.That(robot.BaseMesh.Faces, Is.Not.Empty, robot.Model);
+                Assert.That(robot.Joints.Select(joint => joint.Mesh.Faces.Count), Has.All.GreaterThan(0), robot.Model);
+            });
+        }
+    }
+
     [TestCase("maxspeed", "0", "finite, positive maximum speed")]
     [TestCase("maxspeed", "-1", "finite, positive maximum speed")]
     [TestCase("maxspeed", "NaN", "finite, positive maximum speed")]

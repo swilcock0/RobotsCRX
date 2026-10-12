@@ -7,6 +7,15 @@ static class RobotLibrary
     public static string LocalPath => Settings.Load().LocalLibraryPath;
     public static string OnlinePath => Path.Combine(Settings.PluginPath, "libraries");
 
+    /// <summary>
+    /// Libraries shipped next to the plug-in. Searched last, so local and online
+    /// libraries with the same file name take precedence. Null when the assembly
+    /// is not loaded from a file.
+    /// </summary>
+    public static string? BundledPath => Path.GetDirectoryName(typeof(RobotLibrary).Assembly.Location) is { Length: > 0 } folder
+        ? Path.Combine(folder, "libraries")
+        : null;
+
     public static List<string> List(ElementType type)
     {
         Validate(type);
@@ -59,6 +68,9 @@ static class RobotLibrary
     {
         yield return LocalPath;
         yield return OnlinePath;
+
+        if (BundledPath is { } bundled)
+            yield return bundled;
     }
 
     static IEnumerable<XElement> Elements(XElement root, ElementType type)

@@ -25,6 +25,7 @@
     <EmbeddedResource Include="Resources\Icons\**\*" />
     <None Include="Resources\Package\rhino-package-icon.png" Pack="true" PackagePath="" Visible="false" />
     <None Include="Resources\Package\robots-icon.png" CopyToOutputDirectory="PreserveNewest" TargetPath="robots-icon.png" Visible="false" />
+    <None Include="Resources\Package\libraries\*" CopyToOutputDirectory="PreserveNewest" TargetPath="libraries\%(Filename)%(Extension)" Visible="false" />
     <None Include="$(PkgRhinoCommon)\build\net7.0\RhinoCommon.props" Pack="true" PackagePath="buildTransitive\$(PackageId).props" Visible="false" />
     <None Include="$(PkgRhinoCommon)\build\net7.0\RhinoCommon.targets" Pack="true" PackagePath="buildTransitive\$(PackageId).targets" Visible="false" />
     <None Include="$(PkgGrasshopper)\build\net7.0\Grasshopper.targets" Pack="true" PackagePath="buildTransitive" Visible="false" />
