@@ -1,0 +1,108 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RobotSystems>
+  <RobotCell name="Fanuc-CRX-3iA" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-3iA" manufacturer="Fanuc" payload="3">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-200" maxrange="200" maxspeed="130" />
+          <Revolute number="2" a="280" d="0" minrange="-179.999" maxrange="179.999" maxspeed="130" />
+          <Revolute number="3" a="0" d="0" minrange="-62.7" maxrange="242.7" maxspeed="180" />
+          <Revolute number="4" a="0" d="280" minrange="-190" maxrange="190" maxspeed="225" />
+          <Revolute number="5" a="0" d="111" minrange="-179.999" maxrange="179.999" maxspeed="360" />
+          <Revolute number="6" a="0" d="123" minrange="-225" maxrange="225" maxspeed="360" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-5iA" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-5iA" manufacturer="Fanuc" payload="5">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-200" maxrange="200" maxspeed="150" />
+          <Revolute number="2" a="410" d="0" minrange="-179.9" maxrange="179.9" maxspeed="150" />
+          <Revolute number="3" a="0" d="0" minrange="-68" maxrange="248" maxspeed="180" />
+          <Revolute number="4" a="0" d="430" minrange="-190" maxrange="190" maxspeed="225" />
+          <Revolute number="5" a="0" d="130" minrange="-179.9" maxrange="179.9" maxspeed="225" />
+          <Revolute number="6" a="0" d="145" minrange="-225" maxrange="225" maxspeed="225" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-10iA" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-10iA" manufacturer="Fanuc" payload="10">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-190" maxrange="190" maxspeed="120" />
+          <Revolute number="2" a="540" d="0" minrange="-179.9" maxrange="179.9" maxspeed="120" />
+          <Revolute number="3" a="0" d="0" minrange="-71" maxrange="251" maxspeed="180" />
+          <Revolute number="4" a="0" d="540" minrange="-190" maxrange="190" maxspeed="180" />
+          <Revolute number="5" a="0" d="150" minrange="-179.9" maxrange="179.9" maxspeed="180" />
+          <Revolute number="6" a="0" d="160" minrange="-225" maxrange="225" maxspeed="180" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-10iA/L" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-10iA/L" manufacturer="Fanuc" payload="10">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-179.9" maxrange="179.9" maxspeed="120" />
+          <Revolute number="2" a="710" d="0" minrange="-179.9" maxrange="179.9" maxspeed="120" />
+          <Revolute number="3" a="0" d="0" minrange="-270" maxrange="270" maxspeed="180" />
+          <Revolute number="4" a="0" d="540" minrange="-190" maxrange="190" maxspeed="180" />
+          <Revolute number="5" a="0" d="150" minrange="-179.9" maxrange="179.9" maxspeed="180" />
+          <Revolute number="6" a="0" d="160" minrange="-225" maxrange="225" maxspeed="180" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-10iA/L Paint" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-10iA/L Paint" manufacturer="Fanuc" payload="10">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-180" maxrange="180" maxspeed="120" />
+          <Revolute number="2" a="710" d="0" minrange="-180" maxrange="180" maxspeed="120" />
+          <Revolute number="3" a="0" d="0" minrange="-270" maxrange="270" maxspeed="180" />
+          <Revolute number="4" a="0" d="540" minrange="-190" maxrange="190" maxspeed="180" />
+          <Revolute number="5" a="0" d="150" minrange="-180" maxrange="180" maxspeed="180" />
+          <Revolute number="6" a="0" d="160" minrange="-225" maxrange="225" maxspeed="180" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-20iA/L" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-20iA/L" manufacturer="Fanuc" payload="20">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-179.9" maxrange="179.9" maxspeed="80" />
+          <Revolute number="2" a="710" d="0" minrange="-179.9" maxrange="179.9" maxspeed="80" />
+          <Revolute number="3" a="0" d="0" minrange="-270" maxrange="270" maxspeed="120" />
+          <Revolute number="4" a="0" d="540" minrange="-190" maxrange="190" maxspeed="112.5" />
+          <Revolute number="5" a="0" d="150" minrange="-179.9" maxrange="179.9" maxspeed="90" />
+          <Revolute number="6" a="0" d="160" minrange="-225" maxrange="225" maxspeed="112.5" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+  <RobotCell name="Fanuc-CRX-30iA" manufacturer="Fanuc">
+    <Mechanisms>
+      <RobotArm model="CRX-30iA" manufacturer="Fanuc" payload="30">
+        <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0" />
+        <Joints>
+          <Revolute number="1" a="0" d="0" minrange="-179.9" maxrange="179.9" maxspeed="80" />
+          <Revolute number="2" a="950" d="0" minrange="-179.9" maxrange="179.9" maxspeed="80" />
+          <Revolute number="3" a="0" d="0" minrange="-270" maxrange="270" maxspeed="120" />
+          <Revolute number="4" a="0" d="750" minrange="-190" maxrange="190" maxspeed="180" />
+          <Revolute number="5" a="0" d="185" minrange="-179.9" maxrange="179.9" maxspeed="180" />
+          <Revolute number="6" a="0" d="180" minrange="-225" maxrange="225" maxspeed="180" />
+        </Joints>
+      </RobotArm>
+    </Mechanisms>
+  </RobotCell>
+</RobotSystems>
