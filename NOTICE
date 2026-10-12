@@ -43,3 +43,13 @@ Convertalot
 Euclidean Space
 * Copyright (c) 1998-2021 Martin John Baker
 * http://www.euclideanspace.com/
+
+FANUC fanuc_description (Apache-2.0)
+* Copyright (c) 2025-2026 FANUC America Corporation, FANUC CORPORATION
+* https://github.com/FANUC-CORPORATION/fanuc_description
+* Source of the bundled FANUC CRX robot library meshes and dimensions.
+
+FANUC ROS 2 Driver (Apache-2.0)
+* Copyright (c) 2025 FANUC America Corporation, FANUC CORPORATION
+* https://github.com/FANUC-CORPORATION/fanuc_driver
+* Reference for the Stream Motion and RMI protocol handling.

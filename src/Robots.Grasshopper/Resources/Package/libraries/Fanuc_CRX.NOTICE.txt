@@ -1,0 +1,12 @@
+Fanuc_CRX.xml and Fanuc_CRX.3dm are derived from FANUC's fanuc_description
+package (fanuc_crx_description), https://github.com/FANUC-CORPORATION/fanuc_description
+
+Copyright (C) 2025-2026 FANUC America Corporation
+Copyright (C) 2025-2026 FANUC CORPORATION
+
+Licensed under the Apache License, Version 2.0 (see LICENSE-Apache-2.0.txt).
+
+Changes made by tools/Robots.FanucCrx in the Robots repository: DH parameters,
+joint ranges and joint speeds were derived from the URDF macros, and the COLLADA
+visual and STL collision meshes were merged per link, placed at the zero pose
+relative to the J2 height, and converted to millimeters.

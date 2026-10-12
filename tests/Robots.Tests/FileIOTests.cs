@@ -25,11 +25,20 @@ public class FileIOTests
 
         var file = Path.Combine(root.FullName, "src", "Robots.Grasshopper", "Resources", "Package", "libraries", "Fanuc_CRX.xml");
 
-        var library = XElement.Load(file);
+        var document = XDocument.Load(file);
+        var library = document.Root!;
         using var meshes = File3dm.Read(Path.ChangeExtension(file, ".3dm"));
         var cells = library.Elements("RobotCell").ToArray();
 
-        Assert.That(cells, Has.Length.EqualTo(7));
+        // The meshes are Apache-2.0 and must keep FANUC's notices and the license text.
+        Assert.Multiple(() =>
+        {
+            Assert.That(cells, Has.Length.EqualTo(7));
+            Assert.That(document.FirstNode, Is.TypeOf<XComment>().And.Property("Value").Contains("SPDX-License-Identifier: Apache-2.0"));
+            Assert.That(meshes.Notes.Notes, Does.Contain("FANUC CORPORATION"));
+            Assert.That(Path.Combine(Path.GetDirectoryName(file)!, "Fanuc_CRX.NOTICE.txt"), Does.Exist);
+            Assert.That(Path.Combine(Path.GetDirectoryName(file)!, "LICENSE-Apache-2.0.txt"), Does.Exist);
+        });
 
         foreach (var cell in cells)
         {
