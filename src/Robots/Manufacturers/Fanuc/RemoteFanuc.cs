@@ -6,11 +6,12 @@ namespace Robots;
 /// Streams programs to a FANUC controller with Stream Motion (J519). Upload samples
 /// and checks the program against the controller's limits, Play starts the
 /// controller's STREAM_MOTN program through RMI and streams the joints, and Pause
-/// brings the robot to a controlled stop.
+/// brings the robot to a controlled stop. Following streams joints that can change
+/// while the robot moves, such as from Grasshopper.
 /// </summary>
-public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
+public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifier, IDisposable
 {
-    const string StreamProgram = "STREAM_MOTN";
+    const string StreamProgramName = "STREAM_MOTN";
 
     // FANUC ROS 2 Driver documentation: software options, version, network and controller status.
     const string ControllerSetupUrl = "https://fanuc-corporation.github.io/fanuc_driver_doc/main/docs/quick_start/quick_start.html#robot-controller-setup";
@@ -28,6 +29,8 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
     Thread? _thread;
     volatile bool _stopRequested;
     double[]? _streamedJoints;
+    RobotArm? _followRobot;
+    double[]? _target;
     bool _disposed;
 
     public List<string> Log { get; } = [];
@@ -38,6 +41,9 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
     internal int RmiPort { get; init; } = RmiConnection.DefaultPort;
 
     sealed record Prepared(string Host, RobotArm Robot, StreamMotionTrajectory Trajectory, StreamMotionLimits Limits);
+
+    // A started Stream Motion session, with the robot holding the reported position.
+    sealed record Session(StreamMotionConnection Connection, StreamMotionStatus Status, double[] Current, StreamMotionLimits Limits, double Period);
 
     public void Upload(IProgram program)
     {
@@ -103,17 +109,64 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
                 return;
             }
 
-            _stopRequested = false;
-            _streamedJoints = null;
-            _thread = new(() => Run(prepared))
-            {
-                IsBackground = true,
-                Name = "Fanuc Stream Motion",
-                Priority = ThreadPriority.Highest
-            };
-
-            _thread.Start();
+            _followRobot = null;
+            Start(prepared.Host, prepared.Robot, session => StreamProgram(prepared, session));
         }
+    }
+
+    /// <summary>
+    /// Starts a session that moves the robot towards the joints at a reduced speed
+    /// and then follows the joints passed to <see cref="Follow"/>. The joints must
+    /// stay within <see cref="MaximumApproach"/> degrees of the robot. Pause brings
+    /// the robot to a controlled stop.
+    /// </summary>
+    public void StartFollowing(RobotSystem system, double[] joints)
+    {
+        var robot = GetRobot(system);
+        var target = ToDegrees(robot, joints);
+
+        lock (_sync)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            if (IsRunning)
+                throw new InvalidOperationException("Already streaming.");
+
+            _followRobot = robot;
+            _target = target;
+            Start(Host(), robot, StreamFollow);
+        }
+    }
+
+    public void Follow(double[] joints)
+    {
+        lock (_sync)
+        {
+            if (!IsRunning || _followRobot is not { } robot)
+                throw new InvalidOperationException("Not following. Start following again.");
+
+            var target = ToDegrees(robot, joints);
+
+            // Before the first status, the session checks the target when it starts.
+            if (_streamedJoints is { } current)
+                CheckDistance(current, target);
+
+            Volatile.Write(ref _target, target);
+        }
+    }
+
+    void Start(string host, RobotArm robot, Action<Session> motion)
+    {
+        _stopRequested = false;
+        _streamedJoints = null;
+        _thread = new(() => Run(host, robot, motion))
+        {
+            IsBackground = true,
+            Name = "Fanuc Stream Motion",
+            Priority = ThreadPriority.Highest
+        };
+
+        _thread.Start();
     }
 
     /// <summary>
@@ -179,36 +232,29 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
 
     static double[] Joints(StreamMotionStatus status) => [.. status.Joints[..JointCount].Select(joint => (double)joint)];
 
-    void Run(Prepared prepared)
+    void Run(string host, RobotArm robot, Action<Session> motion)
     {
         StreamMotionConnection? connection = null;
         RmiConnection? rmi = null;
 
         try
         {
-            connection = new(prepared.Host, StreamPort, StatusTimeout);
+            connection = new(host, StreamPort, StatusTimeout);
             connection.SendStop();
             connection.ClearReceiveBuffer();
             var capability = connection.GetCapability();
+            var limits = Clamp(connection.GetLimits(JointCount), robot);
 
-            rmi = new(prepared.Host, RmiPort, RmiTimeout);
+            rmi = new(host, RmiPort, RmiTimeout);
             rmi.Initialize();
-            rmi.CallProgram(StreamProgram);
+            rmi.CallProgram(StreamProgramName);
 
             connection.SendStart();
             var status = WaitUntilReady(connection);
             var current = Joints(status);
 
-            CheckPosition(prepared.Robot, current, status, capability);
-
-            var trajectory = WithApproach(prepared, current, out bool approaching);
-
-            if (approaching)
-                LogUpdate("Moving to the program start at reduced speed.");
-
-            LogUpdate("Streaming.");
-            Stream(connection, status, current, trajectory);
-            LogUpdate(_stopRequested ? "Stopped." : "Program finished.");
+            CheckPosition(robot, current, status, capability);
+            motion(new(connection, status, current, limits, capability.SamplingRate / 1000.0));
         }
         catch (Exception e)
         {
@@ -217,6 +263,40 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
         finally
         {
             Close(connection, rmi);
+        }
+    }
+
+    void StreamProgram(Prepared prepared, Session session)
+    {
+        var trajectory = WithApproach(prepared, session.Current, out bool approaching);
+
+        if (approaching)
+            LogUpdate("Moving to the program start at reduced speed.");
+
+        LogUpdate("Streaming.");
+        Stream(session, trajectory);
+        LogUpdate(_stopRequested ? "Stopped." : "Program finished.");
+    }
+
+    void StreamFollow(Session session)
+    {
+        lock (_sync)
+            CheckDistance(session.Current, _target!);
+
+        JointFollower follower = new(session.Current, session.Limits, session.Period);
+        LogUpdate($"Following at up to {JointFollower.VelocityScale:0%} of the speed limits, smoothing over {follower.SettleSamples * session.Period:0.00} s.");
+        Stream(session, follower.SettleSamples, () => _stopRequested ? follower.Hold() : follower.Step(Volatile.Read(ref _target)!));
+        LogUpdate("Stopped.");
+    }
+
+    static void CheckDistance(double[] current, double[] target)
+    {
+        for (int axis = 0; axis < current.Length; axis++)
+        {
+            double distance = Math.Abs(target[axis] - current[axis]);
+
+            if (distance > MaximumApproach)
+                throw new InvalidOperationException($"J{axis + 1} is {distance:0.#} deg from the robot, more than the {MaximumApproach} deg allowed while following. Move the joints in smaller steps.");
         }
     }
 
@@ -242,12 +322,31 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
         return StreamMotionTrajectory.Create(reference, prepared.Limits, program.Period);
     }
 
-    void Stream(StreamMotionConnection connection, StreamMotionStatus status, double[] current, StreamMotionTrajectory trajectory)
+    void Stream(Session session, StreamMotionTrajectory trajectory)
     {
         var reference = trajectory.Reference;
-        JerkFilter filter = new(trajectory.FirstWindow, trajectory.SecondWindow, current);
-        var command = status.Joints.Select(j => (double)j).ToArray();
+        JerkFilter filter = new(trajectory.FirstWindow, trajectory.SecondWindow, session.Current);
         int index = 0;
+
+        Stream(session, filter.SettleSamples, () =>
+        {
+            if (!_stopRequested && index < reference.Length - 1)
+                index++;
+
+            return filter.Push(reference[index]);
+        }, () => _stopRequested || index == reference.Length - 1);
+    }
+
+    /// <summary>
+    /// Sends one command per status, from <paramref name="next"/>, and ends once
+    /// <paramref name="done"/> has held for the settle samples. By default the
+    /// motion is done when a stop is requested.
+    /// </summary>
+    void Stream(Session session, int settleSamples, Func<double[]> next, Func<bool>? done = null)
+    {
+        var connection = session.Connection;
+        var status = session.Status;
+        var command = status.Joints.Select(j => (double)j).ToArray();
         int settling = 0;
         bool isLast = false;
 
@@ -261,14 +360,12 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
             if (!status.MotionPossible)
                 throw new InvalidOperationException("The controller stopped accepting motion. Check the teach pendant for alarms.");
 
-            if (!_stopRequested && index < reference.Length - 1)
-                index++;
-            else
+            // Checked before the next command, which advances the program index.
+            if (done?.Invoke() ?? _stopRequested)
                 settling++;
 
-            var output = filter.Push(reference[index]);
-            output.CopyTo(command, 0);
-            isLast = settling >= filter.SettleSamples;
+            next().CopyTo(command, 0);
+            isLast = settling >= settleSamples;
             connection.SendCommand(status.Sequence, command, isLast, controlMotion: true);
         }
 
@@ -347,7 +444,12 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
         if (simulated.Errors.Count > 0)
             throw new InvalidOperationException("The program has errors.");
 
-        if (program.RobotSystem is not SystemFanuc { MechanicalGroups: [{ Externals: [] } group] })
+        return GetRobot(program.RobotSystem);
+    }
+
+    static RobotArm GetRobot(RobotSystem system)
+    {
+        if (system is not SystemFanuc { MechanicalGroups: [{ Externals: [] } group] })
             throw new NotSupportedException("Streaming supports a single Fanuc robot without external axes.");
 
         if (group.Robot.Joints.Length != JointCount)
@@ -359,6 +461,20 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteNotifier, IDisposable
     /// <summary>
     /// Also limits joint speed to the robot definition's maximum speed.
     /// </summary>
+    static double[] ToDegrees(RobotArm robot, double[] joints)
+    {
+        if (joints.Length != JointCount)
+            throw new ArgumentException($"Expected {JointCount} joints, got {joints.Length}.", nameof(joints));
+
+        for (int axis = 0; axis < JointCount; axis++)
+        {
+            if (!robot.Joints[axis].Range.IncludesParameter(joints[axis]))
+                throw new ArgumentOutOfRangeException(nameof(joints), $"J{axis + 1} is outside its range.");
+        }
+
+        return [.. joints.Select(robot.RadianToDegree)];
+    }
+
     static StreamMotionLimits Clamp(StreamMotionLimits limits, RobotArm robot)
     {
         var velocity = limits.Velocity

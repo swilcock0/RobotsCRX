@@ -59,6 +59,73 @@ sealed class JerkFilter(int firstWindow, int secondWindow, double[] initial)
 }
 
 /// <summary>
+/// Follows a target that can change at any time. The reference moves towards the
+/// target in a straight joint-space line at a bounded velocity, and a
+/// <see cref="JerkFilter"/> sized from that velocity keeps acceleration and jerk
+/// within <see cref="StreamMotionTrajectory.LimitScale"/> of the limits for any
+/// target sequence.
+/// </summary>
+sealed class JointFollower
+{
+    // Fraction of the controller's velocity limits used while following.
+    public const double VelocityScale = 0.25;
+
+    readonly double[] _reference;
+    readonly double[] _maxStep;
+    readonly JerkFilter _filter;
+
+    public int SettleSamples => _filter.SettleSamples;
+
+    public JointFollower(double[] current, StreamMotionLimits limits, double period)
+    {
+        _reference = [.. current];
+        _maxStep = new double[current.Length];
+        double first = 2;
+
+        for (int axis = 0; axis < current.Length; axis++)
+        {
+            double velocity = limits.Velocity[axis] * VelocityScale;
+            _maxStep[axis] = velocity * period;
+
+            // A moving average over m samples of a velocity bounded by v changes
+            // the velocity by at most 2v/m per sample.
+            first = Math.Max(first, Math.Ceiling(2 * velocity / (period * limits.Acceleration[axis] * StreamMotionTrajectory.LimitScale)));
+        }
+
+        double second = 2;
+
+        for (int axis = 0; axis < current.Length; axis++)
+        {
+            double velocity = limits.Velocity[axis] * VelocityScale;
+            second = Math.Max(second, Math.Ceiling(4 * velocity / (first * period * period * limits.Jerk[axis] * StreamMotionTrajectory.LimitScale)));
+        }
+
+        _filter = new((int)first, (int)second, current);
+    }
+
+    /// <summary>
+    /// Advances one period towards the target.
+    /// </summary>
+    public double[] Step(double[] target)
+    {
+        double ratio = 1;
+
+        for (int axis = 0; axis < _reference.Length; axis++)
+            ratio = Math.Max(ratio, Math.Abs(target[axis] - _reference[axis]) / _maxStep[axis]);
+
+        for (int axis = 0; axis < _reference.Length; axis++)
+            _reference[axis] += (target[axis] - _reference[axis]) / ratio;
+
+        return _filter.Push(_reference);
+    }
+
+    /// <summary>
+    /// Holds the reference, bringing the output to a jerk-limited stop.
+    /// </summary>
+    public double[] Hold() => _filter.Push(_reference);
+}
+
+/// <summary>
 /// A program sampled at the Stream Motion period in controller degrees, with
 /// filter windows chosen so the streamed motion stays within the joint limits.
 /// </summary>

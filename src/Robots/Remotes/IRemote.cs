@@ -21,3 +21,17 @@ public interface IRemoteJoints
     /// </summary>
     double[] ReadJointDegrees();
 }
+
+public interface IRemoteFollow
+{
+    /// <summary>
+    /// Starts moving the robot towards the joints, in radians, and keeps following
+    /// the latest joints passed to <see cref="Follow"/> until <see cref="IRemote.Pause"/>.
+    /// </summary>
+    void StartFollowing(RobotSystem system, double[] joints);
+
+    /// <summary>
+    /// Sets new joints, in radians, for a robot that is following.
+    /// </summary>
+    void Follow(double[] joints);
+}

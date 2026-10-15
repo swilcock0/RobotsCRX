@@ -9,6 +9,9 @@ namespace Robots.Grasshopper;
 
 public class RobotsInfo : GH_AssemblyInfo
 {
+    // The Grasshopper tab of every component and parameter.
+    internal const string Category = "RobotsCRX";
+
     public RobotsInfo()
     {
         var docServer = Instances.DocumentServer

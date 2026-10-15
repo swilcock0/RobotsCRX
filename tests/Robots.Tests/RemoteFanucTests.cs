@@ -188,6 +188,82 @@ class RemoteFanucTests
         });
     }
 
+    [Test]
+    public void FollowsChangingJointsWithinLimits()
+    {
+        using FakeController controller = new(Start);
+        var (system, remote) = CreateRemote(controller);
+        double[] first = [.. Start.Select(value => value + 5)];
+        double[] second = [.. first.Select((value, axis) => axis % 2 == 0 ? value + 10 : value - 10)];
+
+        remote.StartFollowing(system, Radians(system, first));
+        WaitForCommand(controller, first);
+        remote.Follow(Radians(system, second));
+        WaitForCommand(controller, second);
+        remote.Pause();
+        WaitForStream(remote);
+
+        var commands = controller.Commands;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Following at up to 25%"), Log(remote));
+            Assert.That(remote.Log, Has.Some.Contains("Stopped."), Log(remote));
+            Assert.That(controller.RmiCommands, Is.EqualTo(StreamRmiCommands));
+            Assert.That(commands[0].Joints[..6], Is.EqualTo(Start).Within(1e-4));
+            Assert.That(commands[^1].Joints[..6], Is.EqualTo(second).Within(1e-6));
+            Assert.That(commands.Count(c => c.IsLast), Is.EqualTo(1));
+            Assert.That(commands[^1].IsLast, Is.True);
+        });
+
+        AssertWithinLimits(commands);
+    }
+
+    [Test]
+    public void RefusesToFollowDistantJoints()
+    {
+        using FakeController controller = new(Start);
+        var (system, remote) = CreateRemote(controller);
+        double[] near = [.. Start.Select(value => value + 1)];
+        double[] far = [.. Start];
+        far[1] += 30;
+
+        remote.StartFollowing(system, Radians(system, far));
+        WaitForStream(remote);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("J2 is 30 deg from the robot"), Log(remote));
+            Assert.That(controller.Commands, Is.Empty);
+        });
+
+        remote.StartFollowing(system, Radians(system, near));
+        WaitForCommand(controller, near);
+
+        var error = Assert.Throws<InvalidOperationException>(() => remote.Follow(Radians(system, far)));
+        Assert.That(error!.Message, Does.Contain("J2 is 29 deg from the robot"));
+
+        remote.Pause();
+        WaitForStream(remote);
+        Assert.That(controller.Commands[^1].Joints[..6], Is.EqualTo(near).Within(1e-6));
+    }
+
+    static double[] Radians(RobotSystem system, double[] degrees) =>
+        [.. degrees.Select((degree, axis) => system.DegreeToRadian(degree, axis))];
+
+    static void WaitForCommand(FakeController controller, double[] joints)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+
+        while (controller.Commands is not [.., var last] || last.Joints[..6].Zip(joints, (a, b) => Math.Abs(a - b)).Max() > 1e-6)
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail("The robot did not reach the joints.");
+
+            Thread.Sleep(10);
+        }
+    }
+
     static (RobotSystem System, RemoteFanuc Remote) CreateRemote(FakeController controller)
     {
         var system = TestRobots.FanucCrx10();
@@ -218,7 +294,7 @@ class RemoteFanucTests
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
 
-        while (!remote.Log.Any(line => line.Contains("finished.") || line.Contains("Stopped.") || line.Contains("Error")))
+        while (!Newest(remote).Contains("finished.") && !Newest(remote).Contains("Stopped.") && !Newest(remote).Contains("Error"))
         {
             if (DateTime.UtcNow > deadline)
                 Assert.Fail($"Streaming did not finish.{Environment.NewLine}{Log(remote)}");
@@ -251,6 +327,12 @@ class RemoteFanucTests
                 previousAcceleration = acceleration;
             }
         }
+    }
+
+    static string Newest(RemoteFanuc remote)
+    {
+        lock (remote.Log)
+            return remote.Log is [var newest, ..] ? newest : "";
     }
 
     static string Log(RemoteFanuc remote)

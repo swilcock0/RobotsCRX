@@ -44,6 +44,7 @@ static class IconSet
         "SetDO",
         "Simulation",
         "SpeedParameter",
+        "StreamJoints",
         "Stop",
         "TargetParameter",
         "ToolParameter",
@@ -249,6 +250,16 @@ static class IconSet
                 {
                     g.Arc((11 - offset, 14 - offset, 11 + offset, 14 + offset), 210, 330, Orange, 2.0);
                     g.Arc((11 - offset, 14 - offset, 11 + offset, 14 + offset), 210, 330, Ink, 0.7);
+                }
+
+                break;
+            case "StreamJoints":
+                DrawRobot(g, 2, 7, 0.96);
+
+                foreach (var offset in new[] { 4.0, 7.0 })
+                {
+                    g.Arc((10 - offset, 1 - offset, 10 + offset, 1 + offset), 30, 150, Orange, 2.0);
+                    g.Arc((10 - offset, 1 - offset, 10 + offset, 1 + offset), 30, 150, Ink, 0.7);
                 }
 
                 break;

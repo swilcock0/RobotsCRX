@@ -9,7 +9,7 @@ public abstract class Param<T, TGoo>(
     string description,
     string id,
     GH_Exposure exposure = GH_Exposure.primary)
-    : GH_Param<TGoo>($"{nickname} Parameter", nickname, description, "Robots", "Parameters", GH_ParamAccess.item)
+    : GH_Param<TGoo>($"{nickname} Parameter", nickname, description, RobotsInfo.Category, "Parameters", GH_ParamAccess.item)
     where TGoo : Goo<T, TGoo>, new()
 {
     public override GH_Exposure Exposure => exposure;
@@ -65,7 +65,7 @@ public abstract class PersistentParam<T, TGoo>(
     string description,
     string id,
     GH_Exposure exposure = GH_Exposure.primary)
-    : GH_PersistentParam<TGoo>($"{nickname} Parameter", nickname, description, "Robots", "Parameters")
+    : GH_PersistentParam<TGoo>($"{nickname} Parameter", nickname, description, RobotsInfo.Category, "Parameters")
     where TGoo : Goo<T, TGoo>, new()
 {
     public override GH_Exposure Exposure => exposure;

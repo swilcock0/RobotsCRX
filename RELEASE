@@ -1,4 +1,10 @@
-﻿- version: 0.1.0
+﻿- version: 0.2.0
+  changes:
+  - Added the Stream Joints component, which makes a FANUC robot follow joints that change while it moves, such as from sliders or a solver, smoothed to stay within the controller's limits. Joints more than 20 deg from the robot are refused.
+  - The components are now in the RobotsCRX Grasshopper tab. Existing definitions still open, as components are identified by ID.
+  - RobotsCRX warns at startup when the Robots package or another copy of Robots is also installed, as only one of them can load.
+
+- version: 0.1.0
   changes:
   - First RobotsCRX release, based on Robots 2.4.3 by Vicente Soler (visose).
   - Added FANUC CRX robots (CRX-3iA, CRX-5iA, CRX-10iA, CRX-10iA/L, CRX-10iA/L Paint, CRX-20iA/L, CRX-30iA), bundled with the plug-in and converted from FANUC’s fanuc_description (Apache-2.0).
