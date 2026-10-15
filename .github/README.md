@@ -17,7 +17,9 @@
 [Support](#support) •
 [Supporting Robots](#supporting-robots)**
 
-[![Pick and place with a CRX and a WSG 50 gripper](../grasshopper_examples/Fanuc_PnP.gif)](https://youtu.be/9hzEXgxPocg)
+[![Pick and place with a CRX and a WSG 50 gripper](../grasshopper_examples/Fanuc_PnP.gif)](https://youtu.be/CfQiHFo9NpI)
+
+*[Watch the pick and place test in Rhino and Grasshopper](https://youtu.be/CfQiHFo9NpI)*
 
 </div>
 
