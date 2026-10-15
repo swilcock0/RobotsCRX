@@ -58,6 +58,30 @@ public class FileIOTests
         }
     }
 
+    [Test]
+    public void BundledGripperLoadsWithJaws()
+    {
+        var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+
+        while (!File.Exists(Path.Combine(root.FullName, "Robots.slnx")))
+            root = root.Parent ?? throw new DirectoryNotFoundException("Repository root not found.");
+
+        var file = Path.Combine(root.FullName, "src", "Robots.Grasshopper", "Resources", "Package", "libraries", "WSG50.xml");
+        var element = XDocument.Load(file).Root!.Element("Tool")!;
+        using var meshes = File3dm.Read(Path.ChangeExtension(file, ".3dm"));
+        var tool = FileIO.ParseTool(element.ToString(), meshes);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(tool.Name, Is.EqualTo("WSG50"));
+            Assert.That(tool.Tcp.Origin, Is.EqualTo(new Point3d(0, 0, 122)));
+            Assert.That(tool.Jaws, Has.Count.EqualTo(2));
+            Assert.That(tool.Opening, Is.EqualTo(new Interval(5.4, 110)));
+            Assert.That(tool.Mesh.VertexColors, Has.Count.EqualTo(tool.Mesh.Vertices.Count));
+            Assert.That(Path.Combine(Path.GetDirectoryName(file)!, "WSG50.NOTICE.txt"), Does.Exist);
+        });
+    }
+
     [TestCase("maxspeed", "0", "finite, positive maximum speed")]
     [TestCase("maxspeed", "-1", "finite, positive maximum speed")]
     [TestCase("maxspeed", "NaN", "finite, positive maximum speed")]
@@ -67,6 +91,8 @@ public class FileIOTests
     [TestCase("α", "NaN", "finite geometry")]
     [TestCase("θ", "Infinity", "finite geometry")]
     [TestCase("minrange", "170", "finite, increasing range")]
+    [TestCase("minrange", "-INF", "finite, increasing range")]
+    [TestCase("maxrange", "INF", "finite, increasing range")]
     [TestCase("maxrange", "NaN", "finite, increasing range")]
     [TestCase("sign", "2", "sign of -1 or 1")]
     [TestCase("number", "0", "numbered consecutively")]
@@ -78,6 +104,31 @@ public class FileIOTests
         var error = Assert.Throws<ArgumentException>(() => FileIO.ParseRobotSystem(xml.ToString(), Plane.WorldXY));
 
         Assert.That(error!.Message, Does.Contain(message));
+    }
+
+    [TestCase("-INF", "INF", 1080, 0)]
+    [TestCase("-INF", "90", 91, 1)]
+    [TestCase("-90", "INF", -91, 1)]
+    public void PositionerAllowsUnboundedLimitsAndChecksFiniteBounds(string minRange, string maxRange, double angle, int errorCount)
+    {
+        var xml = XElement.Parse(TestRobots.AbbIrb120Xml);
+        xml.Element("Mechanisms")!.Add(XElement.Parse($"""
+            <Positioner model="External" manufacturer="ABB" payload="0">
+              <Base x="0" y="0" z="0" q1="1" q2="0" q3="0" q4="0"/>
+              <Joints><Revolute number="7" a="0" d="0" minrange="{minRange}" maxrange="{maxRange}" maxspeed="90"/></Joints>
+            </Positioner>
+            """));
+
+        var system = (IndustrialSystem)FileIO.ParseRobotSystem(xml.ToString(), Plane.WorldXY);
+        var positioner = system.MechanicalGroups[0].Externals[0];
+        double radians = angle.ToRadians();
+        var solution = positioner.Kinematics(new JointTarget(new double[6], external: [radians]));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(solution.Joints[0], Is.EqualTo(radians));
+            Assert.That(solution.Errors, Has.Count.EqualTo(errorCount));
+        });
     }
 
     [TestCase(5)]

@@ -1,4 +1,9 @@
-﻿- version: 0.3.0
+﻿- version: 0.3.1
+  changes:
+  - Updated to Robots 2.4.4, which fixes loading continuously rotating external axes with unbounded joint limits.
+  - The Schunk WSG 50 gripper tool of the pick and place example now ships with the plug-in, as WSG50 in Load Tool.
+
+- version: 0.3.0
   changes:
   - Tools can have gripper jaws that open and close in the simulation and collision checks. Library tools define them with a Jaws element and Jaw layers in the 3dm file.
   - Added the Set Gripper command, which sets the jaw opening and can pick up a part that the tool carries until the next Set Gripper. It only affects the simulation and adds no code to the program. Program Simulation shows the parts in its new Parts output, and a held part counts as part of the tool in collision checks.
@@ -24,6 +29,10 @@
   - Fixed inverse kinematics giving up on some reachable non-spherical wrist targets.
   - Fixed saving the local library folder when Robots is not installed through the package manager.
   - Ships the Robots license and notices, and FANUC’s Apache-2.0 license and notice for the CRX meshes.
+
+- version: 2.4.4
+  changes:
+  - Fixed loading continuously rotating external axes with unbounded joint limits.
 
 - version: 2.4.3
   changes:

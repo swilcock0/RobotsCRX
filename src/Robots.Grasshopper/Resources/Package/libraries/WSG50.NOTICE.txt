@@ -1,6 +1,5 @@
-WSG50.xml and WSG50.3dm define a Schunk WSG 50-110 gripper tool for the example
-definition. To use it, copy both files to your Robots local library folder
-(Documents\Robots by default).
+WSG50.xml and WSG50.3dm define a Schunk WSG 50-110 gripper tool with the
+BeamFinger fingers, as used in the pick and place example definition.
 
 The gripper body and jaw guide meshes come from the wsg_50_simulation package of
 wsg50-ros-pkg by Nicolas Alt, Robotnik and Weiss Robotics

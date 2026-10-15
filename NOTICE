@@ -53,3 +53,8 @@ FANUC ROS 2 Driver (Apache-2.0)
 * Copyright (c) 2025 FANUC America Corporation, FANUC CORPORATION
 * https://github.com/FANUC-CORPORATION/fanuc_driver
 * Reference for the Stream Motion and RMI protocol handling.
+
+wsg50-ros-pkg (BSD)
+* Nicolas Alt, Robotnik, Weiss Robotics
+* https://github.com/nalt/wsg50-ros-pkg
+* Source of the bundled Schunk WSG 50 gripper body and jaw guide meshes.
