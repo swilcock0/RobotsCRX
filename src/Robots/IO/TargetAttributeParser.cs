@@ -24,7 +24,32 @@ static class TargetAttributeParser
         int? number = element.GetIntOrNull("number");
         Mesh mesh = MeshIO.GetToolMesh(document, name);
         Mesh collisionMesh = MeshIO.GetToolCollisionMesh(document, name, mesh);
-        return new(plane, name, weight, centroid, mesh, useController: useController, number: number, collisionMesh: collisionMesh);
+        var (jaws, opening) = ParseJaws(element, name, document);
+        return new(plane, name, weight, centroid, mesh, useController: useController, number: number, collisionMesh: collisionMesh, jaws: jaws, opening: opening);
+    }
+
+    /// <summary>
+    /// Jaws slide along their direction, with meshes on the Tool.name.Jaw1,
+    /// Tool.name.Jaw2... layers, modeled at zero opening.
+    /// </summary>
+    static (ToolJaw[]? Jaws, Interval? Opening) ParseJaws(XElement element, string name, File3dm document)
+    {
+        if (element.GetElementOrDefault("Jaws") is not { } jawsElement)
+            return (null, null);
+
+        Interval opening = new(jawsElement.GetDoubleAttribute("min"), jawsElement.GetDoubleAttribute("max"));
+        var jaws = jawsElement.Elements("Jaw").Select((jaw, i) =>
+        {
+            var direction = (Vector3d)(jaw.ToPointOrNull() ?? throw new ArgumentException($"Jaw {i + 1} of tool '{name}' needs a direction."));
+            var jawName = $"{name}.Jaw{i + 1}";
+            var mesh = MeshIO.GetToolMesh(document, jawName);
+            return new ToolJaw(mesh, direction, MeshIO.GetToolCollisionMesh(document, jawName, mesh));
+        }).ToArray();
+
+        if (jaws.Length == 0)
+            throw new ArgumentException($"The Jaws element of tool '{name}' has no Jaw elements.");
+
+        return (jaws, opening);
     }
 
     public static Frame ParseFrame(XElement element)

@@ -99,6 +99,11 @@ static class PostProcessorUtil
                 continue;
 
             string commandCode = FormatCommand(program, command, target);
+
+            // Commands without code, such as Set Gripper, add no line.
+            if (string.IsNullOrWhiteSpace(commandCode))
+                continue;
+
             AddCommand(code, transform?.Invoke(commandCode) ?? commandCode);
         }
     }

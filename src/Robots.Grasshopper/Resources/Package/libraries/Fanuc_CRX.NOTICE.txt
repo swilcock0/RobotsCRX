@@ -9,4 +9,5 @@ Licensed under the Apache License, Version 2.0 (see LICENSE-Apache-2.0.txt).
 Changes made by tools/Robots.FanucCrx in the Robots repository: DH parameters,
 joint ranges and joint speeds were derived from the URDF macros, and the COLLADA
 visual and STL collision meshes were merged per link, placed at the zero pose
-relative to the J2 height, and converted to millimeters.
+relative to the J2 height, and converted to millimeters. The COLLADA material
+colors were stored as vertex colors.

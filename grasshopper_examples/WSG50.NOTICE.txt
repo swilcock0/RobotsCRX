@@ -1,0 +1,13 @@
+WSG50.xml and WSG50.3dm define a Schunk WSG 50-110 gripper tool for the example
+definition. To use it, copy both files to your Robots local library folder
+(Documents\Robots by default).
+
+The gripper body and jaw guide meshes come from the wsg_50_simulation package of
+wsg50-ros-pkg by Nicolas Alt, Robotnik and Weiss Robotics
+(https://github.com/nalt/wsg50-ros-pkg), declared BSD licensed, via the forks
+https://github.com/inria-paris-robotics-lab/wsg50-ros-pkg and
+https://github.com/swilcock0/wsg50-ros2-pkg. The adaptor plate on the body and
+the BeamFinger fingers are by Sam Wilcock.
+
+Changes: meshes placed in the Robots flange frame, converted to millimeters,
+split into the body and two jaws, and colored.

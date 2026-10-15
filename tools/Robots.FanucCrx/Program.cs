@@ -20,7 +20,8 @@ const string Notice = """
     fanuc_description (https://github.com/FANUC-CORPORATION/fanuc_description).
     Changes: DH parameters, joint ranges and speeds derived from the URDF macros;
     COLLADA and STL meshes merged per link, placed at the zero pose relative to the
-    J2 height, and converted to millimeters.
+    J2 height, and converted to millimeters; COLLADA material colors stored as
+    vertex colors.
     """;
 
 CrxDefinition[] definitions =

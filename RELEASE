@@ -1,4 +1,13 @@
-﻿- version: 0.2.0
+﻿- version: 0.3.0
+  changes:
+  - Tools can have gripper jaws that open and close in the simulation and collision checks. Library tools define them with a Jaws element and Jaw layers in the 3dm file.
+  - Added the Set Gripper command, which sets the jaw opening and can pick up a part that the tool carries until the next Set Gripper. It only affects the simulation and adds no code to the program. Program Simulation shows the parts in its new Parts output, and a held part counts as part of the tool in collision checks.
+  - Added the Pick and Place component, which creates a pick and place from pick and place planes and a template target, with approach and retreat distances, a grip opening and an optional part.
+  - The CRX meshes now keep FANUC's colors.
+  - Fixed Fanuc programs writing an empty line for commands without code.
+  - Added a pick and place example definition, with a Schunk WSG 50 gripper tool.
+
+- version: 0.2.0
   changes:
   - Added the Stream Joints component, which makes a FANUC robot follow joints that change while it moves, such as from sliders or a solver, smoothed to stay within the controller's limits. Joints more than 20 deg from the robot are refused.
   - The components are now in the RobotsCRX Grasshopper tab. Existing definitions still open, as components are identified by ID.

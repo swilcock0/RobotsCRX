@@ -33,6 +33,7 @@ static class IconSet
         "LoadRobotSystem",
         "LoadTool",
         "Message",
+        "PickAndPlace",
         "PostProcessorParameter",
         "ProgramParameter",
         "PulseDO",
@@ -42,6 +43,7 @@ static class IconSet
         "SaveProgram",
         "SetAO",
         "SetDO",
+        "SetGripper",
         "Simulation",
         "SpeedParameter",
         "StreamJoints",
@@ -285,6 +287,16 @@ static class IconSet
             case "SetDO":
                 g.Line(Ink, 1.5, P(8, 38), P(8, 13));
                 DrawWave(g, Points(8, 30, 8, 20, 18, 20, 18, 30, 31, 30, 31, 20, 41, 20), Orange, 2.6);
+                break;
+            case "PickAndPlace":
+                DrawGripper(g, 24, 19, 0.85);
+                DrawArrow(g, P(7, 6), P(7, 30), Orange, 2.4);
+                DrawArrow(g, P(41, 30), P(41, 6), Orange, 2.4);
+                break;
+            case "SetGripper":
+                DrawGripper(g, 24, 18, 0.9);
+                DrawArrow(g, P(4, 41), P(17, 41), Orange, 2.4);
+                DrawArrow(g, P(44, 41), P(31, 41), Orange, 2.4);
                 break;
             case "Simulation":
                 DrawRobot(g, 2, 5, 0.96);

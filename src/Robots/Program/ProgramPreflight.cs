@@ -15,6 +15,7 @@ class ProgramPreflight(Program program)
         WarnCommandFlybys(targets);
         WarnDefaults(targets);
         WarnPayloads(targets);
+        SetGripperOpenings(systemTargets);
 
         var attributes = CollectAttributes(targets);
         NameAttributes(attributes, targets);
@@ -27,6 +28,85 @@ class ProgramPreflight(Program program)
 
     static ProgramTarget[] GetProgramTargets(List<SystemTarget> systemTargets) =>
         systemTargets.FlattenToArray(x => x.ProgramTargets);
+
+    /// <summary>
+    /// Follows the gripper commands of each robot in program order. The jaws start
+    /// fully open, or at the opening set by the init commands, and an opening
+    /// carries over to the following targets. A command with a part picks it up,
+    /// and the robot's next gripper command lets it go.
+    /// </summary>
+    void SetGripperOpenings(List<SystemTarget> systemTargets)
+    {
+        var initCommands = _program.InitCommands.OfType<Commands.SetGripper>().ToArray();
+
+        if (initCommands.Any(command => command.Part is not null))
+            _program.AddError("Set Gripper in the init commands cannot pick up a part.");
+
+        var initial = initCommands.LastOrDefault()?.Opening;
+        var openings = Enumerable.Repeat(initial, _robotSystem.RobotCount).ToArray();
+        var held = new GrippedPart?[_robotSystem.RobotCount];
+        List<GrippedPart> parts = [];
+        int events = 0;
+        SystemTarget? previous = null;
+
+        foreach (var systemTarget in systemTargets)
+        {
+            foreach (var target in systemTarget.ProgramTargets)
+            {
+                // Run-before commands happen at the previous target's pose.
+                Apply(target, runBefore: true, previous?.ProgramTargets[target.Group] ?? target);
+
+                target.Gripper = State(target);
+                Apply(target, runBefore: false, target);
+                target.GripperAtTarget = State(target);
+            }
+
+            previous = systemTarget;
+        }
+
+        _program.SetGrippedParts(parts);
+
+        GripperState State(ProgramTarget target)
+        {
+            // An opening from a previous tool is kept within this tool's range.
+            var range = target.Target.Tool.Opening;
+            double opening = Math.Clamp(openings[target.Group] ?? range.T1, range.T0, range.T1);
+            return new(opening, events, held[target.Group]);
+        }
+
+        void Apply(ProgramTarget target, bool runBefore, ProgramTarget pose)
+        {
+            var tool = target.Target.Tool;
+
+            foreach (var command in target.Commands.OfType<Commands.SetGripper>().Where(command => command.RunBefore == runBefore))
+            {
+                if (tool.Jaws.Count == 0)
+                    _program.AddError($"Set Gripper needs a tool with jaws, but tool {tool.Name} has none.", target.Index, target.Group);
+                else if (!tool.Opening.IncludesParameter(command.Opening))
+                    _program.AddError($"Gripper opening {command.Opening:0.##} mm is outside the {tool.Opening.T0:0.##} to {tool.Opening.T1:0.##} mm range of tool {tool.Name}.", target.Index, target.Group);
+
+                openings[target.Group] = command.Opening;
+
+                if (held[target.Group] is { } release)
+                {
+                    if (command.Part is not null)
+                        _program.AddError("Set Gripper picks up a part while the gripper is already holding one.", target.Index, target.Group);
+
+                    release.Release = pose;
+                    release.ReleaseEvent = events;
+                    held[target.Group] = null;
+                }
+                else if (command.Part is { } part)
+                {
+                    GrippedPart grasp = new(part, target.Group, pose, events);
+                    parts.Add(grasp);
+                    held[target.Group] = grasp;
+                }
+
+                events++;
+            }
+        }
+    }
 
     void ValidateTargetAxes(IReadOnlyList<ProgramTarget> targets)
     {

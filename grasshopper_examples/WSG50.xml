@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--Schunk WSG 50-110 with the BeamFinger fingers, as in ros2_merlin/my_fanuc
+(crx10ia_l_with_wsg50.urdf.xacro). TCP at dummy_tcp, 122 mm from the flange.
+Mass and centroid are placeholders: measure them and match the payload schedule.
+Jaw1 is gripper_right, Jaw2 gripper_left, modeled at zero opening; the opening
+is twice the URDF finger joint value.-->
+<Library>
+  <Tool name="WSG50">
+    <Tcp x="0" y="0" z="122" q1="1" q2="0" q3="0" q4="0" />
+    <Mass weight="1.4" x="0" y="0" z="60" />
+    <Jaws min="5.4" max="110">
+      <Jaw x="0" y="1" z="0" />
+      <Jaw x="0" y="-1" z="0" />
+    </Jaws>
+  </Tool>
+</Library>

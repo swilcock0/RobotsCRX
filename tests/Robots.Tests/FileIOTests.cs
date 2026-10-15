@@ -51,6 +51,9 @@ public class FileIOTests
                 Assert.That(system.Remote, Is.TypeOf<RemoteFanuc>(), robot.Model);
                 Assert.That(robot.BaseMesh.Faces, Is.Not.Empty, robot.Model);
                 Assert.That(robot.Joints.Select(joint => joint.Mesh.Faces.Count), Has.All.GreaterThan(0), robot.Model);
+
+                // Display meshes keep FANUC's material colors.
+                Assert.That(robot.Joints.Select(joint => joint.Mesh).Prepend(robot.BaseMesh).Select(mesh => mesh.VertexColors.Count == mesh.Vertices.Count), Has.All.True, robot.Model);
             });
         }
     }

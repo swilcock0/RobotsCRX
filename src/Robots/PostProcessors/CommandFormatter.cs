@@ -30,6 +30,13 @@ public abstract class CommandFormatter
             }
         }
 
+        // Simulation only, for every manufacturer.
+        if (command is SetGripper)
+        {
+            code = "";
+            return true;
+        }
+
         string? formatted = FormatCommand(command, system, target);
         code = formatted ?? "";
         return formatted is not null;

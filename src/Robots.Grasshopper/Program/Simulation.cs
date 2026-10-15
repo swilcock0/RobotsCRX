@@ -31,6 +31,7 @@ public sealed class Simulation() : Component(
         _ = pManager.AddNumberParameter("Time", "T", "Current time in seconds.", GH_ParamAccess.item);
         _ = pManager.AddParameter(new ProgramParameter(), "Program", "P", "Pass-through program for visualization components that use simulation state.", GH_ParamAccess.item);
         _ = pManager.AddTextParameter("Errors", "E", "Simulation errors.", GH_ParamAccess.list);
+        _ = pManager.AddMeshParameter("Parts", "Pt", "Parts picked up by Set Gripper commands at the current time: waiting, carried by the tool, or placed.", GH_ParamAccess.list);
     }
 
     protected override void SolveComponent(IGH_DataAccess DA)
@@ -81,6 +82,7 @@ public sealed class Simulation() : Component(
         _ = DA.SetData(4, currentPose.CurrentTime);
         _ = DA.SetData(5, inputProgram);
         _ = DA.SetDataList(6, errors);
+        _ = DA.SetDataList(7, p.CurrentParts());
 
         Update();
     }

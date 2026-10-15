@@ -595,7 +595,7 @@ class ProgramMotionPlanner
         Keyframes.Add(end);
     }
 
-    static double LongestWaitTime(SystemTarget systemTarget, bool runBefore)
+    internal static double LongestWaitTime(SystemTarget systemTarget, bool runBefore)
     {
         double longest = 0;
 

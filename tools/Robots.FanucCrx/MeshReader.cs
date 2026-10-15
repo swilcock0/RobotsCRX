@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Drawing;
+using System.Globalization;
 using System.Xml.Linq;
 using Rhino.Geometry;
 
@@ -63,7 +64,7 @@ static class MeshReader
 
             foreach (var instance in node.Elements(Collada + "instance_geometry"))
             {
-                var part = Geometry(root, instance.Attribute("url")!.Value);
+                var part = Geometry(root, instance.Attribute("url")!.Value, MaterialColors(root, instance));
                 _ = part.Transform(transform);
                 mesh.Append(part);
             }
@@ -73,7 +74,38 @@ static class MeshReader
         }
     }
 
-    static Mesh Geometry(XElement root, string url)
+    /// <summary>
+    /// Diffuse colors of the materials bound to a geometry instance, by symbol.
+    /// </summary>
+    static Dictionary<string, Color> MaterialColors(XElement root, XElement instance)
+    {
+        Dictionary<string, Color> colors = [];
+
+        foreach (var binding in instance.Descendants(Collada + "instance_material"))
+        {
+            string symbol = binding.Attribute("symbol")!.Value;
+            var material = ById(binding.Attribute("target")!.Value);
+            var effect = ById(material.Element(Collada + "instance_effect")!.Attribute("url")!.Value);
+            var diffuse = effect.Descendants(Collada + "diffuse").Single().Element(Collada + "color")
+                ?? throw new InvalidDataException($"Material '{symbol}' has no diffuse color.");
+
+            var rgb = Floats(diffuse.Value);
+            colors[symbol] = Color.FromArgb((int)Math.Round(rgb[0] * 255), (int)Math.Round(rgb[1] * 255), (int)Math.Round(rgb[2] * 255));
+        }
+
+        return colors;
+
+        XElement ById(string url)
+        {
+            return root.Descendants().Single(e => "#" + e.Attribute("id")?.Value == url);
+        }
+    }
+
+    /// <summary>
+    /// Triangles with their material's color on the vertices. Vertices are not
+    /// shared between materials, so colors change sharply at material edges.
+    /// </summary>
+    static Mesh Geometry(XElement root, string url, Dictionary<string, Color> colors)
     {
         var geometry = root.Descendants(Collada + "geometry").Single(g => "#" + g.Attribute("id")!.Value == url);
         var meshElement = geometry.Element(Collada + "mesh")!;
@@ -92,11 +124,16 @@ static class MeshReader
 
         Mesh mesh = new();
 
-        for (int i = 0; i < positions.Length; i += 3)
-            _ = mesh.Vertices.Add(positions[i], positions[i + 1], positions[i + 2]);
-
         foreach (var triangles in meshElement.Elements(Collada + "triangles"))
         {
+            string symbol = triangles.Attribute("material")?.Value
+                ?? throw new InvalidDataException($"Geometry '{url}' has triangles without a material.");
+
+            if (!colors.TryGetValue(symbol, out var color))
+                throw new InvalidDataException($"Geometry '{url}' uses unbound material '{symbol}'.");
+
+            Dictionary<int, int> vertexMap = [];
+
             var inputs = triangles.Elements(Collada + "input").ToArray();
             int stride = inputs.Max(input => int.Parse(input.Attribute("offset")!.Value, CultureInfo.InvariantCulture)) + 1;
             int vertexOffset = int.Parse(
@@ -116,9 +153,21 @@ static class MeshReader
             for (int i = 0; i < indices.Length; i += 3 * stride)
             {
                 _ = mesh.Faces.AddFace(
-                    indices[i + vertexOffset],
-                    indices[i + stride + vertexOffset],
-                    indices[i + 2 * stride + vertexOffset]);
+                    Vertex(indices[i + vertexOffset]),
+                    Vertex(indices[i + stride + vertexOffset]),
+                    Vertex(indices[i + 2 * stride + vertexOffset]));
+            }
+
+            int Vertex(int index)
+            {
+                if (!vertexMap.TryGetValue(index, out int vertex))
+                {
+                    vertex = mesh.Vertices.Add(positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2]);
+                    _ = mesh.VertexColors.Add(color);
+                    vertexMap.Add(index, vertex);
+                }
+
+                return vertex;
             }
         }
 

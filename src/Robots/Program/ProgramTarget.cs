@@ -4,6 +4,12 @@ namespace Robots;
 
 public enum SpeedType { Tcp, Rotation, Axis, External };
 
+/// <summary>
+/// Opening of the tool's jaws, the number of gripper events so far in the program,
+/// and the part the gripper holds.
+/// </summary>
+readonly record struct GripperState(double Opening, int Events, GrippedPart? Held);
+
 public class ProgramTarget
 {
     static readonly IReadOnlyList<Command> _noCommands = [];
@@ -18,6 +24,16 @@ public class ProgramTarget
     internal int LeadingJoint { get; set; }
     internal SpeedType SpeedType { get; set; }
     internal int CoupledPlaneIndex { get; set; } = -1;
+
+    /// <summary>
+    /// Gripper while moving to this target, after its run-before commands.
+    /// </summary>
+    internal GripperState Gripper { get; set; }
+
+    /// <summary>
+    /// Gripper once at this target, after its other commands.
+    /// </summary>
+    internal GripperState GripperAtTarget { get; set; }
 
     public int Index => SystemTarget.Index;
     internal bool HasCommands => Commands.Count > 0;

@@ -62,6 +62,7 @@ public class Program : IProgram
     readonly List<TargetProperty> _attributes = [];
     readonly List<Command> _initCommands;
     readonly List<MotionSegment> _motionSegments = [];
+    GrippedPart[] _grippedParts = [];
     readonly SystemTarget[] _targets;
 
     public string Name { get; }
@@ -151,6 +152,33 @@ public class Program : IProgram
 
         AddMessage(_warnings, _uniqueWarnings, AddFirstAffected(plural(count), targetIndex, robotGroup));
     }
+
+    internal void SetGrippedParts(IEnumerable<GrippedPart> parts) => _grippedParts = [.. parts];
+
+    /// <summary>
+    /// The parts picked up by Set Gripper commands at the current simulation time:
+    /// where they wait before the pick, carried by the tool, or where they were let go.
+    /// </summary>
+    public Mesh[] CurrentParts()
+    {
+        var pose = CurrentSimulationPose;
+        var systemTarget = Targets[pose.TargetIndex];
+        bool atTarget = IsAtTarget(pose, systemTarget);
+
+        return [.. _grippedParts.Select(part =>
+        {
+            var target = systemTarget.ProgramTargets[part.Group];
+            var gripper = atTarget ? target.GripperAtTarget : target.Gripper;
+            return part.Pose(gripper.Events, pose.Kinematics[part.Group]);
+        })];
+    }
+
+    /// <summary>
+    /// The robot has reached the target and runs its commands, which happens before
+    /// the target's waits.
+    /// </summary>
+    static bool IsAtTarget(SimulationPose pose, SystemTarget systemTarget) =>
+        pose.CurrentTime >= systemTarget.TotalTime - ProgramMotionPlanner.LongestWaitTime(systemTarget, runBefore: false) - TimeTol;
 
     internal void AddAttributes(IEnumerable<TargetProperty> attributes) =>
         _attributes.AddRange(attributes);
@@ -329,7 +357,7 @@ public class Program : IProgram
         var current = _simulation.CurrentSimulationPose;
         var systemTarget = Targets[current.TargetIndex];
 
-        MeshPoser.Pose(current.Kinematics, systemTarget);
+        MeshPoser.Pose(current.Kinematics, systemTarget, IsAtTarget(current, systemTarget));
     }
 
     public Collision CheckCollisions(IReadOnlyList<int>? first = null, IReadOnlyList<int>? second = null, Mesh? environment = null, int environmentPlane = 0, double linearStep = 100, double angularStep = PI / 4.0)

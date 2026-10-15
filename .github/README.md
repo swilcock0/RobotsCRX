@@ -17,6 +17,8 @@
 [Support](#support) •
 [Supporting Robots](#supporting-robots)**
 
+[![Pick and place with a CRX and a WSG 50 gripper](../grasshopper_examples/Fanuc_PnP.gif)](https://youtu.be/9hzEXgxPocg)
+
 </div>
 
 ## RobotsCRX
@@ -28,6 +30,8 @@ The fork adds:
 - **FANUC CRX robots**: the CRX-3iA, CRX-5iA, CRX-10iA, CRX-10iA/L, CRX-10iA/L Paint, CRX-20iA/L and CRX-30iA ship with the plugin, converted from FANUC’s [fanuc_description](https://github.com/FANUC-CORPORATION/fanuc_description) (Apache-2.0) by `tools/Robots.FanucCrx`, and solved with the analytical non-spherical wrist solver.
 - **Stream Motion**: the `Remote connection` component streams programs to FANUC controllers with Stream Motion (J519), starting the controller’s `STREAM_MOTN` program through RMI. Upload checks the program against the controller’s own joint limits, Play moves slowly to the program start if needed and checks the robot model against the controller first, and Pause stops smoothly.
 - **Read Joints**: a component that reads the robot’s current joints from the controller, once or continuously.
+- **Grippers**: tools can have jaws that open and close in the simulation. The `Set Gripper` command sets the opening and can pick up a part, which the tool carries (and collision checks include) until it lets go. `Program Simulation` shows the parts in its `Parts` output.
+- **Pick and Place**: a component that makes the targets of a pick and place from pick and place planes and a template target, with approach and retreat distances. With lists of picks and places it makes one branch per part. See `grasshopper_examples/Fanuc_WSG50_example.ghx`, and copy `WSG50.xml` and `WSG50.3dm` from the same folder to your local library (`Documents\Robots` by default) for its Schunk WSG 50 gripper tool.
 - **Stream Joints**: a component that makes the robot follow joints that change while it moves, such as from sliders or a solver, with the motion smoothed to stay within the controller’s limits. Joints more than 20° from the robot are refused, and turning Stream off stops smoothly.
 
 > Streaming moves a real robot. Test with low speeds and override, with the teach pendant at hand.
