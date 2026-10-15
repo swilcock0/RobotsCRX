@@ -1,0 +1,24 @@
+name: CI
+
+# RobotsCRX builds and tests every change. Releases are packaged locally with
+# build/pack-crx.ps1, as the .yak needs Rhino's Yak tool.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+          global-json-file: global.json
+      - run: dotnet build Robots.slnx -c Release
+      - run: dotnet test tests/Robots.Tests -c Release --no-build
+      - run: dotnet format whitespace Robots.slnx --verify-no-changes --no-restore
