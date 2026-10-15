@@ -1,5 +1,6 @@
 ﻿using System.Drawing;
 using System.Windows.Forms;
+using GH_IO.Serialization;
 
 namespace Robots.Grasshopper;
 
@@ -43,6 +44,49 @@ public abstract class Component(
         Util.ReplaceHelpMenuItem(menu, Util.ComponentHelpUrl(this));
 
         return result;
+    }
+
+    /// <summary>
+    /// Files saved before an input or output was added have no chunk for it, which
+    /// Grasshopper reports as a missing archive chunk. Reads the parameters the file
+    /// has and keeps the later ones at their defaults.
+    /// </summary>
+    public override bool Read(GH_IReader reader)
+    {
+        if (this is IGH_VariableParameterComponent)
+            return base.Read(reader);
+
+        var inputs = Added(Params.Input, reader, "param_input");
+        var outputs = Added(Params.Output, reader, "param_output");
+
+        foreach (var param in inputs)
+            _ = Params.UnregisterInputParameter(param, false);
+
+        foreach (var param in outputs)
+            _ = Params.UnregisterOutputParameter(param, false);
+
+        try
+        {
+            return base.Read(reader);
+        }
+        finally
+        {
+            foreach (var param in inputs)
+                _ = Params.RegisterInputParam(param);
+
+            foreach (var param in outputs)
+                _ = Params.RegisterOutputParam(param);
+        }
+    }
+
+    static IGH_Param[] Added(List<IGH_Param> parameters, GH_IReader reader, string chunkName)
+    {
+        int saved = 0;
+
+        while (reader.ChunkExists(chunkName, saved))
+            saved++;
+
+        return [.. parameters.Skip(saved)];
     }
 
     protected override void RegisterInputParams(GH_InputParamManager pManager) { }

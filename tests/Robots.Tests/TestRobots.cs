@@ -200,7 +200,7 @@ static class TestRobots
 
     // DH values and ranges from fanuc_description's crx10ia_urdf_macro.xacro, with the
     // base plane at the J2 height like the Fanuc library.
-    const string FanucCrx10Xml = """
+    internal const string FanucCrx10Xml = """
         <RobotSystem name="CRX10iATest" manufacturer="Fanuc">
           <Mechanisms>
             <RobotArm model="CRX10iATest" manufacturer="Fanuc" payload="10">

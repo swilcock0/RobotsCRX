@@ -1,4 +1,11 @@
-﻿- version: 0.3.1
+﻿- version: 0.3.2
+  changes:
+  - Load Robot System has an optional Joint Limits input that narrows the robot arm's joint ranges in order, in library degrees; joints after the last limit, or given a single number such as -1, keep their full range. Inverse kinematics only picks solutions within them, targets outside them are errors, and Stream Joints refuses joints outside them.
+  - Check Collisions has a Parts input to leave parts held by Set Gripper out of the tool's collision mesh.
+  - Fixed "parameter chunk is missing" errors when opening files saved before a component gained an input or output.
+  - Added a pick and place example with several parts.
+
+- version: 0.3.1
   changes:
   - Updated to Robots 2.4.4, which fixes loading continuously rotating external axes with unbounded joint limits.
   - The Schunk WSG 50 gripper tool of the pick and place example now ships with the plug-in, as WSG50 in Load Tool.

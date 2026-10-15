@@ -22,6 +22,7 @@ public class CheckCollisions() : Component(
         _ = pManager.AddNumberParameter("Linear Step Size", "Ls", "Linear step size in mm used to check for collisions.", GH_ParamAccess.item, 100);
         _ = pManager.AddNumberParameter("Angular Step Size", "As", "Angular step size in rad used to check for collisions.", GH_ParamAccess.item, PI / 4);
 
+        _ = pManager.AddBooleanParameter("Parts", "Pt", "Include parts held by Set Gripper in the tool's collision mesh.", GH_ParamAccess.item, true);
         pManager[1].Optional = true;
         pManager[2].Optional = true;
         pManager[3].Optional = true;
@@ -47,7 +48,8 @@ public class CheckCollisions() : Component(
             DA.Maybe<Mesh>(3),
             DA.Get<int>(4),
             DA.Get<double>(5),
-            DA.Get<double>(6));
+            DA.Get<double>(6),
+            DA.Get<bool>(7));
 
         _ = DA.SetData(0, collision.HasCollision);
 

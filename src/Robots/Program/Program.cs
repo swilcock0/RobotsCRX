@@ -360,14 +360,14 @@ public class Program : IProgram
         MeshPoser.Pose(current.Kinematics, systemTarget, IsAtTarget(current, systemTarget));
     }
 
-    public Collision CheckCollisions(IReadOnlyList<int>? first = null, IReadOnlyList<int>? second = null, Mesh? environment = null, int environmentPlane = 0, double linearStep = 100, double angularStep = PI / 4.0)
+    public Collision CheckCollisions(IReadOnlyList<int>? first = null, IReadOnlyList<int>? second = null, Mesh? environment = null, int environmentPlane = 0, double linearStep = 100, double angularStep = PI / 4.0, bool parts = true)
     {
         int groupMeshCount = RobotSystem.DefaultPose.CollisionMeshes[0].Length;
         int robotBaseIndex = groupMeshCount - RobotSystem.GetRobotJointCount(0) - 1;
         first ??= [groupMeshCount];
         second ??= [robotBaseIndex + 4];
 
-        return new(this, first, second, environment, environmentPlane, linearStep, angularStep);
+        return new(this, first, second, environment, environmentPlane, linearStep, angularStep, parts);
     }
 
     public void Save(string folder)

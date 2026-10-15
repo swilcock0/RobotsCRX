@@ -12,7 +12,7 @@ public class Collision
     public Mesh[] Meshes => throw NotSupported();
     public SystemTarget CollisionTarget => throw NotSupported();
 
-    internal Collision(Program program, IReadOnlyList<int> first, IReadOnlyList<int> second, Mesh? environment, int environmentPlane, double linearStep, double angularStep)
+    internal Collision(Program program, IReadOnlyList<int> first, IReadOnlyList<int> second, Mesh? environment, int environmentPlane, double linearStep, double angularStep, bool parts)
     {
         throw NotSupported();
     }
@@ -31,12 +31,13 @@ public class Collision
     readonly int[] _second;
     readonly Mesh? _environment;
     readonly int _environmentPlane;
+    readonly bool _parts;
 
     public Mesh[]? Meshes { get; private set; }
     public SystemTarget? CollisionTarget { get; private set; }
     public bool HasCollision => CollisionTarget is not null;
 
-    internal Collision(Program program, IReadOnlyList<int> first, IReadOnlyList<int> second, Mesh? environment, int environmentPlane, double linearStep, double angularStep)
+    internal Collision(Program program, IReadOnlyList<int> first, IReadOnlyList<int> second, Mesh? environment, int environmentPlane, double linearStep, double angularStep, bool parts)
     {
         _program = program;
         _system = program.RobotSystem;
@@ -45,6 +46,7 @@ public class Collision
         _environment = environment;
         ArgumentOutOfRangeException.ThrowIfLessThan(environmentPlane, -1);
         _environmentPlane = environmentPlane;
+        _parts = parts;
 
         int meshCount = RhinoMeshPoser.CreateCollision(_program.RobotSystem).Meshes.Length + (_environment is null ? 0 : 1);
         _first = ValidateSet(first, nameof(first), meshCount);
@@ -177,7 +179,7 @@ public class Collision
 
     Mesh[] PoseMeshes(RhinoMeshPoser meshPoser, IReadOnlyList<KinematicSolution> kinematics, SystemTarget systemTarget)
     {
-        meshPoser.Pose(kinematics, systemTarget);
+        meshPoser.Pose(kinematics, systemTarget, parts: _parts);
         var meshes = meshPoser.Meshes;
 
         if (_environment is null)

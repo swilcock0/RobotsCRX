@@ -18,10 +18,16 @@ public static class FileIO
     public static Tool ParseTool(string xml, File3dm meshDoc) =>
         TargetAttributeParser.ParseTool(xml, meshDoc);
 
-    public static RobotSystem LoadRobotSystem(string name, Plane basePlane, bool loadMeshes = true, IPostProcessor? postProcessor = null)
+    /// <param name="jointLimits">Optional narrower ranges for the robot arm joints in order, in
+    /// the library's degrees. Later joints, and joints given a single value, keep their ranges.</param>
+    public static RobotSystem LoadRobotSystem(string name, Plane basePlane, bool loadMeshes = true, IPostProcessor? postProcessor = null, IReadOnlyList<Interval>? jointLimits = null)
     {
         var (element, file) = RobotLibrary.Load(name, ElementType.RobotSystem);
         var meshDoc = loadMeshes ? MeshIO.ReadDocument(file) : null;
+
+        if (jointLimits is { Count: > 0 })
+            element = RobotSystemParser.LimitJoints(element, jointLimits);
+
         return RobotSystemParser.Parse(element, basePlane, meshDoc, postProcessor);
     }
 

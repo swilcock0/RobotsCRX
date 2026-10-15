@@ -154,6 +154,35 @@ public class GripperTests
     }
 
     [Test]
+    public void CollisionChecksCanLeaveOutParts()
+    {
+        var tool = CreateGripper();
+        var system = TestRobots.FanucCrx10();
+        var robot = ((IndustrialSystem)system).MechanicalGroups[0].Robot;
+        var part = Box(-5, 5);
+
+        JointTarget pick = new([.. Start.Select(robot.DegreeToRadian)], tool, command: new SetGripper(20, part));
+        JointTarget end = new([.. End.Select(robot.DegreeToRadian)], tool);
+        Program program = new("Parts", system, [TestRobots.Toolpath(pick, end)]);
+        var target = program.Targets[1];
+        var kinematics = target.ProgramTargets.MapToList(t => t.Kinematics);
+
+        // The collision meshes Check Collisions uses, with and without the held part.
+        Assert.Multiple(() =>
+        {
+            Assert.That(CollisionTool(parts: true).Vertices, Has.Count.EqualTo(tool.CollisionMesh.Vertices.Count + part.Vertices.Count));
+            Assert.That(CollisionTool(parts: false).Vertices, Has.Count.EqualTo(tool.CollisionMesh.Vertices.Count));
+        });
+
+        Mesh CollisionTool(bool parts)
+        {
+            var poser = RhinoMeshPoser.CreateCollision(system);
+            poser.Pose(kinematics, target, parts: parts);
+            return poser.Meshes[^1];
+        }
+    }
+
+    [Test]
     public void RejectsPickingWhileHolding()
     {
         var part = Box(0, 1);

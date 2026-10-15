@@ -10,6 +10,41 @@ static class RobotSystemParser
     public static RobotSystem Parse(string xml, Plane basePlane, File3dm? meshDoc, IPostProcessor? postProcessor) =>
         Parse(XElement.Parse(xml), basePlane, meshDoc, postProcessor);
 
+    /// <summary>
+    /// A copy of a robot system element with its robot arm joints limited to
+    /// narrower ranges, in joint number order. Joints after the given limits keep
+    /// their ranges, and so do joints whose limit is a single value, such as -1.
+    /// </summary>
+    public static XElement LimitJoints(XElement element, IReadOnlyList<Interval> limits)
+    {
+        XElement limited = new(element);
+        var joints = limited.Descendants("RobotArm")
+            .SelectMany(arm => arm.GetElement("Joints").Elements().OrderBy(joint => joint.GetIntAttribute("number")))
+            .ToArray();
+
+        if (limits.Count > joints.Length)
+            throw new ArgumentException($"Expected at most {joints.Length} joint limits, one per robot arm joint, but got {limits.Count}.", nameof(limits));
+
+        for (int i = 0; i < limits.Count; i++)
+        {
+            double min = joints[i].GetDoubleAttribute("minrange");
+            double max = joints[i].GetDoubleAttribute("maxrange");
+            var limit = limits[i];
+
+            // A single value, such as -1, keeps the joint's range.
+            if (limit.IsValid && limit.T0 == limit.T1)
+                continue;
+
+            if (!limit.IsValid || limit.Min >= limit.Max || limit.Min < min || limit.Max > max)
+                throw new ArgumentException($"The J{i + 1} limit of {limit.Min:0.###} to {limit.Max:0.###} deg must be an increasing range within the joint's range of {min:0.###} to {max:0.###} deg.", nameof(limits));
+
+            joints[i].SetAttributeValue("minrange", limit.Min);
+            joints[i].SetAttributeValue("maxrange", limit.Max);
+        }
+
+        return limited;
+    }
+
     public static RobotSystem Parse(XElement element, Plane basePlane, File3dm? meshDoc, IPostProcessor? postProcessor)
     {
         string typeName = element.Name.LocalName;
