@@ -30,6 +30,7 @@ public class Collision
     readonly int[] _first;
     readonly int[] _second;
     readonly Mesh? _environment;
+    readonly Mesh[] _environmentPieces;
     readonly int _environmentPlane;
     readonly bool _parts;
 
@@ -44,6 +45,9 @@ public class Collision
         _linearStep = CheckPositive(linearStep, nameof(linearStep));
         _angularStep = CheckPositive(angularStep, nameof(angularStep));
         _environment = environment;
+
+        // A fixed environment is checked piece by piece, so far pieces are skipped quickly.
+        _environmentPieces = environment is not null && environmentPlane == -1 ? environment.SplitDisjointPieces() : [];
         ArgumentOutOfRangeException.ThrowIfLessThan(environmentPlane, -1);
         _environmentPlane = environmentPlane;
         _parts = parts;
@@ -171,11 +175,49 @@ public class Collision
     {
         ThrowIfKinematicErrors(kinematics);
         var meshes = PoseMeshes(meshPoser, kinematics, target);
-        var setA = SelectMeshes(meshes, _first);
-        var setB = SelectMeshes(meshes, _second);
-        var clashes = Rhino.Geometry.Intersect.MeshClash.Search(setA, setB, 1, 1);
+        var setA = Pieces(SelectMeshes(meshes, _first));
+        var setB = Pieces(SelectMeshes(meshes, _second));
+
+        // Only meshes whose boxes come within the clash distance of the other set can clash.
+        var boxA = Union(setA);
+        var boxB = Union(setB);
+        var nearA = setA.Where(mesh => Near(mesh.GetBoundingBox(true), boxB)).ToArray();
+        var nearB = setB.Where(mesh => Near(mesh.GetBoundingBox(true), boxA)).ToArray();
+
+        if (nearA.Length == 0 || nearB.Length == 0)
+            return null;
+
+        var clashes = Rhino.Geometry.Intersect.MeshClash.Search(nearA, nearB, ClashDistance, 1);
         return clashes.Length == 0 ? null : [clashes[0].MeshA, clashes[0].MeshB];
+
+        Mesh[] Pieces(Mesh[] set)
+        {
+            return _environmentPieces.Length > 1 && set.Any(mesh => ReferenceEquals(mesh, _environment))
+                ? [.. set.Where(mesh => !ReferenceEquals(mesh, _environment)), .. _environmentPieces]
+                : set;
+        }
+
+        static BoundingBox Union(Mesh[] meshes)
+        {
+            var box = BoundingBox.Empty;
+
+            foreach (var mesh in meshes)
+                box.Union(mesh.GetBoundingBox(true));
+
+            return box;
+        }
+
+        static bool Near(BoundingBox a, BoundingBox b)
+        {
+            return a.IsValid && b.IsValid
+                && a.Min.X <= b.Max.X + ClashDistance && b.Min.X <= a.Max.X + ClashDistance
+                && a.Min.Y <= b.Max.Y + ClashDistance && b.Min.Y <= a.Max.Y + ClashDistance
+                && a.Min.Z <= b.Max.Z + ClashDistance && b.Min.Z <= a.Max.Z + ClashDistance;
+        }
     }
+
+    // Meshes closer than this, in millimeters, collide.
+    const double ClashDistance = 1;
 
     Mesh[] PoseMeshes(RhinoMeshPoser meshPoser, IReadOnlyList<KinematicSolution> kinematics, SystemTarget systemTarget)
     {

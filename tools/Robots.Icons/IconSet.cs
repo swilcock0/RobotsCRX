@@ -8,6 +8,7 @@ static class IconSet
 {
     static readonly string[] IconNames =
     [
+        "CellCollisions",
         "CheckCollisions",
         "CommandParameter",
         "CreateFrame",
@@ -158,6 +159,13 @@ static class IconSet
 
         switch (name)
         {
+            case "CellCollisions":
+                DrawRobot(g, 1, 3, 1.0);
+                g.Rounded((25, 33, 41, 38), 1.5, Orange, Ink, 1.1);
+                g.Rounded((25, 27, 41, 32), 1.5, OrangeLight, Ink, 1.1);
+                g.Rounded((25, 21, 41, 26), 1.5, MetalLight, Ink, 1.1);
+                DrawCheckBadge(g);
+                break;
             case "CheckCollisions":
                 DrawRobot(g, 1, 3, 1.0);
                 g.Rounded((27, 23, 39, 35), 3, MetalLight, Ink, 1.2);

@@ -4,7 +4,7 @@ namespace Robots.Grasshopper;
 
 public class PickAndPlace() : Component(
     "Pick and Place",
-    "Creates the targets of a pick and place with a gripper tool: joint moves to points above the pick and place, linear moves in and out along the tool's Z axis, and Set Gripper commands that open, grip the part and let it go. With lists of picks and places, outputs one branch of targets per part.",
+    "Creates the targets of a pick and place with a gripper tool: joint moves to points above the pick and place, linear moves in and out along the tool's Z axis, and Set Gripper commands that open, grip the part and let it go. With lists of picks and places, outputs one branch of targets per part. With Collisions on, Create Program may turn the tool 180 degrees or move higher between the pick and place to avoid collisions.",
     "Components",
     "{8E5D2F14-6B3A-4C9D-A7E1-2F0B9C4D6E83}",
     GH_Exposure.secondary)
@@ -21,6 +21,7 @@ public class PickAndPlace() : Component(
         _ = pManager.AddParameter(new SpeedParameter(), "Linear Speed", "S", "Optional speed of the linear moves in and out. Uses the template's speed if omitted.", GH_ParamAccess.item);
         _ = pManager.AddNumberParameter("Wait", "W", "Seconds to wait after the jaws close and after they open.", GH_ParamAccess.item, 0);
         _ = pManager.AddNumberParameter("Open", "Op", "Optional opening in mm the jaws open to before the pick and to let go. Uses the tool's largest opening if omitted; keep it small enough to clear neighbouring parts.", GH_ParamAccess.item);
+        _ = pManager.AddBooleanParameter("Symmetric", "Sy", "The part looks the same turned 180 degrees about the tool's Z axis, so a program avoiding collisions may place it turned from how it was picked.", GH_ParamAccess.item, false);
         pManager[6].Optional = true;
         pManager[7].Optional = true;
         pManager[9].Optional = true;
@@ -43,7 +44,8 @@ public class PickAndPlace() : Component(
             DA.Maybe<Mesh>(6),
             DA.Maybe<Speed>(7),
             DA.Get<double>(8),
-            DA.MaybeValue<double>(9));
+            DA.MaybeValue<double>(9),
+            DA.Get<bool>(10));
 
         _ = DA.SetDataList(0, targets);
     }

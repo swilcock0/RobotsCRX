@@ -63,6 +63,8 @@ public class Program : IProgram
     readonly List<Command> _initCommands;
     readonly List<MotionSegment> _motionSegments = [];
     GrippedPart[] _grippedParts = [];
+
+    internal IReadOnlyList<GrippedPart> GrippedParts => _grippedParts;
     readonly SystemTarget[] _targets;
 
     public string Name { get; }
@@ -75,6 +77,11 @@ public class Program : IProgram
     public IReadOnlyList<string> Errors { get; }
     public List<List<List<string>>>? Code { get; }
     public double Duration { get; internal set; }
+
+    /// <summary>
+    /// Collisions found by the checks asked for when the program was created.
+    /// </summary>
+    public IReadOnlyList<CellContact> Collisions { get; private set; } = [];
     internal IReadOnlyList<MotionSegment> MotionSegments => _motionSegments;
 
     public IMeshPoser? MeshPoser { get; set; }
@@ -83,7 +90,7 @@ public class Program : IProgram
 
     public bool HasSimulation => _simulation is not null;
 
-    public Program(string name, RobotSystem robotSystem, IReadOnlyList<IToolpath> toolpaths, Commands.Group? initCommands = null, IReadOnlyList<int>? multiFileIndices = null, double stepSize = 1.0)
+    public Program(string name, RobotSystem robotSystem, IReadOnlyList<IToolpath> toolpaths, Commands.Group? initCommands = null, IReadOnlyList<int>? multiFileIndices = null, double stepSize = 1.0, CollisionOptions? collisions = null)
     {
         RobotSystem = robotSystem;
         Name = name;
@@ -94,6 +101,9 @@ public class Program : IProgram
         Warnings = _warnings.AsReadOnly();
         Errors = _errors.AsReadOnly();
         CheckName(name, robotSystem);
+
+        if (collisions is { Avoid: true } && toolpaths is [var toolpath] && robotSystem.RobotCount == 1)
+            toolpaths = [new SimpleToolpath(PickAndPlacePlanner.Plan(this, toolpath.Targets, initCommands, stepSize, collisions))];
 
         var targets = CreateSystemTargets(toolpaths);
 
@@ -121,6 +131,9 @@ public class Program : IProgram
 
         _targets = [.. targets];
         Targets = Array.AsReadOnly(_targets);
+
+        if (collisions is not null && Errors.Count == 0 && HasSimulation)
+            AddCollisionErrors(collisions);
 
         _multiFileIndices.AddRange(FixMultiFileIndices(multiFileIndices, _targets.Length));
 
@@ -360,6 +373,7 @@ public class Program : IProgram
         MeshPoser.Pose(current.Kinematics, systemTarget, IsAtTarget(current, systemTarget));
     }
 
+    /// <param name="parts">Add parts held by Set Gripper to the tool's collision mesh.</param>
     public Collision CheckCollisions(IReadOnlyList<int>? first = null, IReadOnlyList<int>? second = null, Mesh? environment = null, int environmentPlane = 0, double linearStep = 100, double angularStep = PI / 4.0, bool parts = true)
     {
         int groupMeshCount = RobotSystem.DefaultPose.CollisionMeshes[0].Length;
@@ -368,6 +382,34 @@ public class Program : IProgram
         second ??= [robotBaseIndex + 4];
 
         return new(this, first, second, environment, environmentPlane, linearStep, angularStep, parts);
+    }
+
+    /// <summary>
+    /// Checks a single-robot cell with the convex hulls of its shapes: the tool, with
+    /// any held part, against the robot's base and arm up to J4, and the arm, tool and
+    /// held part against the environment and the other parts.
+    /// </summary>
+    /// <returns>The first collision on the way to each target that has one, in target order.</returns>
+    public IReadOnlyList<CellContact> CheckCellCollisions(CollisionOptions? options = null)
+    {
+        if (!HasSimulation)
+            throw new InvalidOperationException("Collision checking requires a valid simulation pose.");
+
+        return new CollisionChecker(this, options ?? new()).Check();
+    }
+
+    void AddCollisionErrors(CollisionOptions options)
+    {
+        if (RobotSystem is not IndustrialSystem { MechanicalGroups: [{ Externals: [] }] })
+        {
+            AddError("Collision checks support a single robot without external axes.");
+            return;
+        }
+
+        Collisions = new CollisionChecker(this, options).Check();
+
+        foreach (var contact in Collisions)
+            AddError(contact.ToString(), contact.TargetIndex);
     }
 
     public void Save(string folder)

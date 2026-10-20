@@ -11,7 +11,6 @@ namespace Robots;
 sealed class GrippedPart(Mesh part, int group, ProgramTarget grasp, int graspEvent)
 {
     readonly ConcurrentDictionary<Tool, Tool> _tools = new();
-    Mesh? _placed;
 
     public Mesh Part { get; } = part;
     public int Group { get; } = group;
@@ -25,7 +24,7 @@ sealed class GrippedPart(Mesh part, int group, ProgramTarget grasp, int graspEve
     /// <summary>
     /// The part relative to the flange, like a tool mesh.
     /// </summary>
-    Mesh Local => field ??= Moved(Part, Transform.PlaneToPlane(Flange(Grasp.Kinematics), Plane.WorldXY));
+    internal Mesh Local => field ??= Moved(Part, Transform.PlaneToPlane(Flange(Grasp.Kinematics), Plane.WorldXY));
 
     public bool IsHeld(int events) => events > GraspEvent && events <= ReleaseEvent;
 
@@ -41,8 +40,13 @@ sealed class GrippedPart(Mesh part, int group, ProgramTarget grasp, int graspEve
         if (events <= ReleaseEvent)
             return Moved(Local, Transform.PlaneToPlane(Plane.WorldXY, Flange(kinematics)));
 
-        return _placed ??= Moved(Local, Transform.PlaneToPlane(Plane.WorldXY, Flange(Release!.Kinematics)));
+        return Placed!;
     }
+
+    /// <summary>
+    /// The part where it was let go, or null if it is never let go.
+    /// </summary>
+    public Mesh? Placed => Release is null ? null : field ??= Moved(Local, Transform.PlaneToPlane(Plane.WorldXY, Flange(Release.Kinematics)));
 
     /// <summary>
     /// The tool carrying the part, for collision checks.

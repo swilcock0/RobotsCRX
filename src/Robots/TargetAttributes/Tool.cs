@@ -11,7 +11,6 @@ public class Tool : TargetProperty
     public double Weight { get; }
     public Point3d Centroid { get; }
     readonly Mesh _bodyMesh;
-    readonly Mesh _bodyCollisionMesh;
     readonly ConcurrentDictionary<double, Tool>? _openings;
 
     /// <summary>
@@ -19,6 +18,11 @@ public class Tool : TargetProperty
     /// </summary>
     public Mesh Mesh { get; private set; }
     public Mesh CollisionMesh { get; private set; }
+
+    /// <summary>
+    /// The collision mesh without the jaws.
+    /// </summary>
+    internal Mesh BodyCollisionMesh { get; }
 
     /// <summary>
     /// Gripper jaws that open and close with the <see cref="Commands.SetGripper"/> command.
@@ -49,7 +53,7 @@ public class Tool : TargetProperty
         Weight = CheckNonNegative(weight, nameof(weight));
         Centroid = (centroid is null) ? tcp.Origin : (Point3d)centroid;
         _bodyMesh = mesh ?? GeometryUtil.EmptyMesh;
-        _bodyCollisionMesh = collisionMesh ?? _bodyMesh;
+        BodyCollisionMesh = collisionMesh ?? _bodyMesh;
         Jaws = jaws ?? [];
 
         if (Jaws.Count > 0)
@@ -142,10 +146,10 @@ public class Tool : TargetProperty
     (Mesh Mesh, Mesh CollisionMesh) PoseJaws(double opening)
     {
         if (Jaws.Count == 0)
-            return (_bodyMesh, _bodyCollisionMesh);
+            return (_bodyMesh, BodyCollisionMesh);
 
         Mesh mesh = _bodyMesh.DuplicateMesh();
-        Mesh collisionMesh = _bodyCollisionMesh.DuplicateMesh();
+        Mesh collisionMesh = BodyCollisionMesh.DuplicateMesh();
 
         foreach (var jaw in Jaws)
         {

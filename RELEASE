@@ -1,4 +1,12 @@
-﻿- version: 0.3.4
+﻿- version: 0.3.5
+  changes:
+  - Added cell collision checks, written in managed code with the convex hulls of the robot's links, the tool, the parts and each separate piece of the environment, so they also run on macOS: the tool and any held part against the robot's own arm, and the arm, tool and held part against the environment and the other parts, where they wait and where they were placed. A pick and place cell checks in tens of milliseconds.
+  - Create Program has Collisions and Environment inputs. With Collisions on, each Pick and Place is made again with the tool turned 180 degrees or moving higher between the pick and place if that clears it of collisions and singularities, preferring linear moves that do not flip the arm, with a warning saying so; other targets are kept, and each collision left is an error.
+  - Pick and Place has a Symmetric input for parts that look the same turned 180 degrees, which a program avoiding collisions may then place turned from how they were picked.
+  - Added the Cell Collisions component, which lists every target with a collision, what collided and the meshes involved.
+  - Check Collisions is faster: a fixed environment is checked piece by piece, skipping meshes too far apart to collide.
+
+- version: 0.3.4
   changes:
   - Added the Reachability component, which scores how well a 6-axis robot reaches points with the tool turned through several rotations, away from the J5 = 0 wrist flip boundary, as a colored map with a legend.
 

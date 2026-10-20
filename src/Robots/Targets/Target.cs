@@ -28,6 +28,12 @@ public abstract class Target : IToolpath
 
     public IReadOnlyList<Target> Targets { get; }
 
+    /// <summary>
+    /// The pick and place that made this target, which a program avoiding collisions
+    /// may make again. Targets changed from it are not part of it.
+    /// </summary>
+    internal PickAndPlaceStep? Step { get; set; }
+
     internal Target WithTool(Tool tool) =>
         WithProperties(tool, Speed, Zone, Command, Frame, External, ExternalCustom);
 

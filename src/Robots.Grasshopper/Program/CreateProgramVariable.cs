@@ -1,4 +1,7 @@
-﻿using static Robots.Grasshopper.ProgramToolpaths;
+﻿using GH_IO.Serialization;
+using Grasshopper.Kernel.Parameters;
+using Rhino.Geometry;
+using static Robots.Grasshopper.ProgramToolpaths;
 
 namespace Robots.Grasshopper;
 
@@ -10,6 +13,9 @@ public class CreateProgramVariable() : Component(
     GH_Exposure.quarternary)
     , IGH_VariableParameterComponent
 {
+    const string CollisionsDescription = "Avoid collisions in a single-robot cell: the tool and any part it holds against the robot's arm, and the arm, tool and held part against the environment and the parts picked up by Set Gripper. The targets of each Pick and Place are made again turned 180 degrees or moving higher between the pick and place if that clears them, with a warning, and remaining collisions are errors.";
+    const string EnvironmentDescription = "Optional fixed geometry to avoid when checking collisions, such as the pedestal and table. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces.";
+
     RobotSystem? _robotSystem;
 
     protected override void RegisterInputParams(GH_InputParamManager pManager)
@@ -20,9 +26,33 @@ public class CreateProgramVariable() : Component(
         _ = pManager.AddParameter(new CommandParameter(), "Init Commands", "C", "Optional list of commands that run at the start of the program.", GH_ParamAccess.list);
         _ = pManager.AddIntegerParameter("Multi-File Indices", "I", "Optional indices used to split the program into multiple files. Each index is the first target of an additional file.", GH_ParamAccess.list);
         _ = pManager.AddNumberParameter("Step Size", "S", "Distance in mm used to step through linear motions for error checking and simulation. Smaller values are more accurate but slower.", GH_ParamAccess.item, 1);
+        _ = pManager.AddBooleanParameter("Collisions", "Co", CollisionsDescription, GH_ParamAccess.item, false);
+        _ = pManager.AddMeshParameter("Environment", "E", EnvironmentDescription, GH_ParamAccess.list);
         pManager[2].Optional = true;
         pManager[3].Optional = true;
         pManager[4].Optional = true;
+        pManager[7].Optional = true;
+    }
+
+    /// <summary>
+    /// Files saved before the collision inputs were added keep their inputs, so the
+    /// collision inputs are added after them.
+    /// </summary>
+    public override bool Read(GH_IReader reader)
+    {
+        bool read = base.Read(reader);
+
+        if (InputIndex("Collisions") == -1)
+        {
+            Param_Boolean collisions = new() { Name = "Collisions", NickName = "Co", Description = CollisionsDescription, Access = GH_ParamAccess.item };
+            collisions.SetPersistentData(false);
+            _ = Params.RegisterInputParam(collisions);
+        }
+
+        if (InputIndex("Environment") == -1)
+            _ = Params.RegisterInputParam(new Param_Mesh { Name = "Environment", NickName = "E", Description = EnvironmentDescription, Access = GH_ParamAccess.list, Optional = true });
+
+        return read;
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -85,8 +115,11 @@ public class CreateProgramVariable() : Component(
         var stepSizeIndex = InputIndex("Step Size");
         var stepSize = stepSizeIndex == -1 ? 1.0 : DA.Get<double>(stepSizeIndex);
         var toolpaths = ProgramToolpaths.Read(DA, Params);
+        CollisionOptions? collisions = DA.Get("Collisions", false)
+            ? new() { Environment = MaybeList<Mesh>(DA, "Environment") }
+            : null;
 
-        Program program = new(name, robotSystem, toolpaths, initCommands, multiFileIndices, stepSize);
+        Program program = new(name, robotSystem, toolpaths, initCommands, multiFileIndices, stepSize, collisions);
 
         _ = DA.SetData(0, program);
 
