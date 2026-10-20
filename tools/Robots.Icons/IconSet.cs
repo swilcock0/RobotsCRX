@@ -37,6 +37,7 @@ static class IconSet
         "PostProcessorParameter",
         "ProgramParameter",
         "PulseDO",
+        "Reachability",
         "ReadJoints",
         "Remote",
         "RobotSystemParameter",
@@ -287,6 +288,21 @@ static class IconSet
             case "SetDO":
                 g.Line(Ink, 1.5, P(8, 38), P(8, 13));
                 DrawWave(g, Points(8, 30, 8, 20, 18, 20, 18, 30, 31, 30, 31, 20, 41, 20), Orange, 2.6);
+                break;
+            case "Reachability":
+                foreach (var (column, row, fill) in new[]
+                {
+                    (0, 0, MetalLight), (1, 0, OrangeLight), (2, 0, Orange),
+                    (0, 1, MetalLight), (1, 1, MetalLight), (2, 1, OrangeLight),
+                    (0, 2, MetalLight), (1, 2, MetalLight), (2, 2, MetalLight),
+                })
+                {
+                    double x = 5 + column * 12;
+                    double y = 18 + row * 9;
+                    g.Polygon(fill, Ink, 1.0, P(x + 3, y), P(x + 14, y), P(x + 11, y + 8), P(x, y + 8));
+                }
+
+                DrawRobot(g, 19, 2, 0.6);
                 break;
             case "PickAndPlace":
                 DrawGripper(g, 24, 19, 0.85);

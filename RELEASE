@@ -1,4 +1,8 @@
-﻿- version: 0.3.3
+﻿- version: 0.3.4
+  changes:
+  - Added the Reachability component, which scores how well a 6-axis robot reaches points with the tool turned through several rotations, away from the J5 = 0 wrist flip boundary, as a colored map with a legend.
+
+- version: 0.3.3
   changes:
   - Programs plan much faster on FANUC CRX robots, around 60 times for a 100-part pick and place: samples along a path are solved by continuation from the previous sample, falling back to the full inverse kinematics near singularities or for large steps, with the same results.
   - Fanuc programs warn when the robot base is not at the world origin but Cartesian targets use the default frame, as their TP positions would be offset by the base.
