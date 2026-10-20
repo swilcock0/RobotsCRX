@@ -56,8 +56,8 @@ $manifest = @"
 name: RobotsCRX
 version: $version
 authors:
-- Robots Authors (Vicente Soler, visose)
 - Sam Wilcock
+- Vicente Soler (Robots Author)
 description: Fork of Robots (https://github.com/visose/Robots) with FANUC CRX robots, Stream Motion streaming and a Read Joints component. Create and simulate ABB, KUKA, UR, Staubli, Franka Emika, Doosan, Fanuc, Igus, and Jaka robot programs in Rhino 8 and Grasshopper. Replaces the Robots package; uninstall Robots first.
 url: $url
 icon: robots-icon.png

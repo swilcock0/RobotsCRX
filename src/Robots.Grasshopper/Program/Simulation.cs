@@ -11,14 +11,15 @@ public sealed class Simulation() : Component(
     SimulationForm? _form;
     DateTime? _lastTime;
     double _time;
-    double _lastInputTime;
+    double _inputTime = double.NaN;
+    double _end;
 
     internal double Speed = 1;
 
     protected override void RegisterInputParams(GH_InputParamManager pManager)
     {
         _ = pManager.AddParameter(new ProgramParameter(), "Program", "P", "Program to simulate.", GH_ParamAccess.item);
-        _ = pManager.AddNumberParameter("Time", "T", "Simulation time. Use 0 to 1 when Normalized is true.", GH_ParamAccess.item, 0);
+        _ = pManager.AddNumberParameter("Time", "T", "Simulation time, where playback stops when connected. Use 0 to 1 when Normalized is true.", GH_ParamAccess.item, 0);
         _ = pManager.AddBooleanParameter("Normalized", "N", "Treat Time as a normalized value from 0 to 1.", GH_ParamAccess.item, true);
     }
 
@@ -43,22 +44,24 @@ public sealed class Simulation() : Component(
         if (inputProgram is not Program p || !p.HasSimulation)
             throw new RuntimeWarningException("Input program cannot be animated.");
 
-        inputTime = isNormalized ? inputTime * p.Duration : inputTime;
+        inputTime = Rhino.RhinoMath.Clamp(isNormalized ? inputTime * p.Duration : inputTime, 0, p.Duration);
 
-        if (_lastInputTime != inputTime)
+        // A connected time is where playback stops, otherwise it plays to the end.
+        _end = Params.Input[1].SourceCount > 0 ? inputTime : p.Duration;
+
+        // A new time moves the robot there, unless it is playing towards it.
+        if (inputTime != _inputTime)
         {
-            if (_lastTime is not null)
-                Pause();
+            _inputTime = inputTime;
 
-            _time = inputTime;
-            _lastInputTime = inputTime;
+            if (_lastTime is null)
+                _time = inputTime;
         }
 
-        if (_time < 0 || _time > p.Duration)
-        {
-            _time = Rhino.RhinoMath.Clamp(_time, 0, p.Duration);
+        _time = Rhino.RhinoMath.Clamp(_time, 0, _end);
+
+        if (_lastTime is not null && (Speed >= 0 ? _time >= _end : _time <= 0))
             Pause();
-        }
 
         if (p.MeshPoser is not RhinoMeshPoser meshPoser)
         {
@@ -91,6 +94,12 @@ public sealed class Simulation() : Component(
     {
         if (_lastTime is null)
         {
+            // From the start when already at the end.
+            if (Speed >= 0 && _time >= _end)
+                _time = 0;
+            else if (Speed < 0 && _time <= 0)
+                _time = _end;
+
             _lastTime = DateTime.Now;
             ExpireSolution(true);
         }
@@ -103,7 +112,7 @@ public sealed class Simulation() : Component(
     internal void Stop()
     {
         Pause();
-        _time = _lastInputTime;
+        _time = _inputTime;
         ExpireSolution(true);
     }
 

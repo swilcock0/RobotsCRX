@@ -1,4 +1,10 @@
-﻿- version: 0.3.6
+﻿- version: 0.4.0
+  changes:
+  - Program Simulation's playback stops at a connected Time input rather than pausing whenever it changes: while paused the time still moves the robot, Play runs from where the robot is (from the start if it is already there) and Stop returns to it. Without a connected time, playback runs to the end of the program.
+  - The playback speed slider doubles from 0.25 to 128 times, with reverse speeds down to -4 times, and shows the current speed.
+  - The multi-part pick and place example uses Create Program's Collisions and Environment inputs.
+
+- version: 0.3.6
   changes:
   - Programs avoiding collisions route a Pick and Place's joint moves around obstacles that no turn or lift clears, such as tall fixtures, with RRT-Connect in joint space. Routes are shortened to a few joint waypoints, keep the arm's configuration at the target they lead to, and are the same each time the program is made. Later pick and places try joining the routes found before, as they usually go around the same obstacles.
   - Pick and places are lifted up to 1000 mm, rather than 300 mm, stopping once the lifted points are out of reach, and first try what cleared the previous pick and place, so neighbouring parts move alike.

@@ -48,19 +48,23 @@ class SimulationForm : ComponentForm
             Orientation = Orientation.Vertical,
             Size = new(-1, -1),
             TabIndex = 2,
-            MaxValue = 400,
-            MinValue = -200,
-            TickFrequency = 100,
+            MaxValue = Speeds.Length - 1,
+            MinValue = 0,
+            TickFrequency = 1,
             SnapToTick = true,
-            Value = 100,
+            Value = Array.IndexOf(Speeds, component.Speed),
         };
-
-        slider.ValueChanged += (s, e) => component.Speed = slider.Value / 100.0; ;
 
         Label speedLabel = new()
         {
-            Text = "100%",
+            Text = Describe(component.Speed),
             VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        slider.ValueChanged += (s, e) =>
+        {
+            component.Speed = Speeds[slider.Value];
+            speedLabel.Text = Describe(component.Speed);
         };
 
         DynamicLayout layout = new();
@@ -73,6 +77,11 @@ class SimulationForm : ComponentForm
 
         Content = layout;
     }
+
+    // Doubling up to 128 times faster, and back in reverse.
+    static readonly double[] Speeds = [-4, -2, -1, -0.5, 0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128];
+
+    static string Describe(double speed) => $"{speed:0.##}×";
 
     protected override void OnClosing(CancelEventArgs e)
     {
