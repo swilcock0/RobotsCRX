@@ -83,7 +83,10 @@ public class CollisionCheckerTests
     public void CreateProgramReportsCollisionsAsErrors()
     {
         var cell = Cell.Create();
-        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(1400)] };
+
+        // A block over the stack, which no turn, lift or route avoids.
+        var block = Box(new(700, 1000), new(-450, -150), new(150, 400));
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, block] };
 
         var program = cell.Program(options);
 
@@ -109,7 +112,7 @@ public class CollisionCheckerTests
     public void CreateProgramLiftsPickAndPlacesOverAWall()
     {
         var cell = Cell.Create(parts: 3);
-        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(300)], MaxLift = 600 };
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(400)] };
 
         var kept = cell.Program(options with { Avoid = false });
         var avoided = cell.Program(options);
@@ -121,6 +124,94 @@ public class CollisionCheckerTests
             Assert.That(avoided.Warnings, Has.Some.Contains("lifted"));
             Assert.That(avoided.Targets, Has.Count.GreaterThan(kept.Targets.Count), "Lifted pick and places have more targets.");
             Assert.That(avoided.Targets[0].ProgramTargets[0].Target, Is.SameAs(cell.Start), "Other targets are kept.");
+        });
+    }
+
+    [Test]
+    public void CreateProgramRoutesPickAndPlacesAroundATallPost()
+    {
+        var cell = Cell.Create(parts: 3);
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(2000)] };
+
+        var kept = cell.Program(options with { Avoid = false });
+        var avoided = cell.Program(options);
+        var again = cell.Program(options);
+        var waypoints = avoided.Targets.Skip(1).Count(target => target.ProgramTargets[0].Target is JointTarget);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.Errors, Has.Some.Contains("environment mesh 2"));
+            Assert.That(avoided.Errors, Is.Empty);
+            Assert.That(avoided.Warnings, Has.Some.Contains("routed through"));
+            Assert.That(waypoints, Is.InRange(1, 6 * cell.Picks.Length), "A few waypoints for each pick and place.");
+            Assert.That(again.Code, Is.EqualTo(avoided.Code), "The same cell gets the same route.");
+        });
+    }
+
+    [Test]
+    public void JointRouterGoesAroundAnObstacle()
+    {
+        Interval[] ranges = [.. Enumerable.Repeat(new Interval(-PI, PI), 6)];
+        double[] start = [-1, 0, 0, 0, 0, 0];
+        double[] goal = [1, 0, 0, 0, 0, 0];
+
+        JointRouter router = new(IsFree, ranges, 0.01, 1);
+        var path = router.Find(start, goal, []);
+
+        Assert.That(path, Is.Not.Null);
+        Assert.Multiple(() =>
+        {
+            Assert.That(path![0], Is.EqualTo(start));
+            Assert.That(path[^1], Is.EqualTo(goal));
+            Assert.That(path, Has.Count.InRange(3, 5), "Shortened to a few waypoints.");
+
+            for (int i = 1; i < path.Count; i++)
+            {
+                for (int k = 0; k <= 1000; k++)
+                {
+                    var joints = path[i - 1].Zip(path[i], (a, b) => a + ((b - a) * k / 1000)).ToArray();
+                    Assert.That(IsFree(joints), Is.True, $"Motion {i} is clear.");
+                }
+            }
+        });
+
+        // A wall across the first joint, which the second joint has to lift over.
+        static bool IsFree(double[] joints)
+        {
+            return Abs(joints[0]) > 0.3 || joints[1] > 1;
+        }
+    }
+
+    [Test]
+    public void JointRouterReusesEarlierRoutes()
+    {
+        Interval[] ranges = [.. Enumerable.Repeat(new Interval(-PI, PI), 6)];
+        int checks = 0;
+
+        bool IsFree(double[] joints)
+        {
+            checks++;
+            return Abs(joints[0]) > 0.3 || joints[1] > 1;
+        }
+
+        var first = new JointRouter(IsFree, ranges, 0.01, 1).Find([-1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0], [])!;
+
+        // Back again from a little further along.
+        double[] start = [1.2, 0.1, 0, 0, 0, 0];
+        double[] goal = [-1.1, -0.1, 0, 0, 0, 0];
+
+        checks = 0;
+        var fresh = new JointRouter(IsFree, ranges, 0.01, 2).Find(start, goal, []);
+        int freshChecks = checks;
+
+        checks = 0;
+        var reused = new JointRouter(IsFree, ranges, 0.01, 2).Find(start, goal, [first]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(fresh, Is.Not.Null);
+            Assert.That(reused, Is.Not.Null);
+            Assert.That(checks, Is.LessThan(freshChecks), "Joining an earlier route checks fewer poses than searching again.");
         });
     }
 

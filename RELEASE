@@ -1,4 +1,10 @@
-﻿- version: 0.3.5
+﻿- version: 0.3.6
+  changes:
+  - Programs avoiding collisions route a Pick and Place's joint moves around obstacles that no turn or lift clears, such as tall fixtures, with RRT-Connect in joint space. Routes are shortened to a few joint waypoints, keep the arm's configuration at the target they lead to, and are the same each time the program is made. Later pick and places try joining the routes found before, as they usually go around the same obstacles.
+  - Pick and places are lifted up to 1000 mm, rather than 300 mm, stopping once the lifted points are out of reach, and first try what cleared the previous pick and place, so neighbouring parts move alike.
+  - Programs avoiding collisions are made several times faster: the programs tried while planning skip the robot code and are sampled every 5 mm, while the program made checks its motions at its own step size.
+
+- version: 0.3.5
   changes:
   - Added cell collision checks, written in managed code with the convex hulls of the robot's links, the tool, the parts and each separate piece of the environment, so they also run on macOS: the tool and any held part against the robot's own arm, and the arm, tool and held part against the environment and the other parts, where they wait and where they were placed. A pick and place cell checks in tens of milliseconds.
   - Create Program has Collisions and Environment inputs. With Collisions on, each Pick and Place is made again with the tool turned 180 degrees or moving higher between the pick and place if that clears it of collisions and singularities, preferring linear moves that do not flip the arm, with a warning saying so; other targets are kept, and each collision left is an error.

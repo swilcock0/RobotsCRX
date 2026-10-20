@@ -4,7 +4,7 @@ namespace Robots.Grasshopper;
 
 public class PickAndPlace() : Component(
     "Pick and Place",
-    "Creates the targets of a pick and place with a gripper tool: joint moves to points above the pick and place, linear moves in and out along the tool's Z axis, and Set Gripper commands that open, grip the part and let it go. With lists of picks and places, outputs one branch of targets per part. With Collisions on, Create Program may turn the tool 180 degrees or move higher between the pick and place to avoid collisions.",
+    "Creates the targets of a pick and place with a gripper tool: joint moves to points above the pick and place, linear moves in and out along the tool's Z axis, and Set Gripper commands that open, grip the part and let it go. With lists of picks and places, outputs one branch of targets per part. With Collisions on, Create Program may turn the tool 180 degrees, move higher between the pick and place, or route the moves between them around obstacles to avoid collisions.",
     "Components",
     "{8E5D2F14-6B3A-4C9D-A7E1-2F0B9C4D6E83}",
     GH_Exposure.secondary)

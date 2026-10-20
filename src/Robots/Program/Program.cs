@@ -91,6 +91,10 @@ public class Program : IProgram
     public bool HasSimulation => _simulation is not null;
 
     public Program(string name, RobotSystem robotSystem, IReadOnlyList<IToolpath> toolpaths, Commands.Group? initCommands = null, IReadOnlyList<int>? multiFileIndices = null, double stepSize = 1.0, CollisionOptions? collisions = null)
+        : this(name, robotSystem, toolpaths, initCommands, multiFileIndices, stepSize, collisions, true) { }
+
+    /// <param name="writeCode">Whether to write the robot code, which programs tried while planning do without.</param>
+    internal Program(string name, RobotSystem robotSystem, IReadOnlyList<IToolpath> toolpaths, Commands.Group? initCommands, IReadOnlyList<int>? multiFileIndices, double stepSize, CollisionOptions? collisions, bool writeCode)
     {
         RobotSystem = robotSystem;
         Name = name;
@@ -137,7 +141,7 @@ public class Program : IProgram
 
         _multiFileIndices.AddRange(FixMultiFileIndices(multiFileIndices, _targets.Length));
 
-        if (Errors.Count == 0)
+        if (writeCode && Errors.Count == 0)
         {
             var code = RobotSystem.Code(this);
 

@@ -8,7 +8,8 @@ namespace Robots;
 /// motions to points above the pick and place, and with linear motions in and out
 /// along the tool's Z axis. The jaws open above the pick, grip the part at the pick,
 /// and let it go at the place. A program that avoids collisions may turn the tool
-/// 180 degrees about its Z axis, or move higher between the pick and place.
+/// 180 degrees about its Z axis, move higher between the pick and place, or route
+/// the joint motions between them around obstacles.
 /// </summary>
 public static class PickAndPlace
 {

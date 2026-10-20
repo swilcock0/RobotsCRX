@@ -45,15 +45,16 @@ public sealed record CollisionOptions
     /// <summary>
     /// When creating a program, make the targets of each Pick and Place again turned
     /// 180 degrees about the tool's Z axis, or moving higher between the pick and
-    /// place, if that avoids collisions or singularities. Other targets are kept.
+    /// place, if that avoids collisions or singularities, or else with its joint
+    /// motions routed around obstacles through joint waypoints. Other targets are kept.
     /// </summary>
     public bool Avoid { get; init; } = true;
 
     /// <summary>
     /// Highest lift above the approach and retreat to try when avoiding collisions,
-    /// in steps of 100 millimeters.
+    /// in steps of 100 millimeters, stopping sooner once the lifted points are out of reach.
     /// </summary>
-    public double MaxLift { get; init; } = 300;
+    public double MaxLift { get; init; } = 1000;
 
     /// <summary>
     /// Parts that stay where they are, such as the other parts of a pick and
@@ -163,7 +164,7 @@ sealed class CollisionChecker
             {
                 var kinematics = target.ProgramTargets[0].Kinematics;
 
-                if (kinematics.Errors.Count == 0 && Find(kinematics, target) is { } contact)
+                if (kinematics.Errors.Count == 0 && Find(kinematics, target, _options.Distance) is { } contact)
                     found[target.Index] = (0, contact);
             }
         }
@@ -190,7 +191,7 @@ sealed class CollisionChecker
                         if (kinematics[0].Errors.Count > 0)
                             continue;
 
-                        if (Find(kinematics[0], target) is { } contact)
+                        if (Find(kinematics[0], target, _options.Distance) is { } contact)
                         {
                             _ = found.AddOrUpdate(target.Index, (position, contact), (_, existing) => existing.Position <= position ? existing : (position, contact));
                             break;
@@ -207,14 +208,59 @@ sealed class CollisionChecker
         return [.. found.OrderBy(pair => pair.Key).Select(pair => pair.Value.Contact)];
     }
 
-    CellContact? Find(KinematicSolution kinematics, SystemTarget target)
+    /// <summary>
+    /// The robot's joint ranges, in radians.
+    /// </summary>
+    public Interval[] Ranges => [.. _system.GetJoints(0).Select(joint => joint.Range)];
+
+    /// <summary>
+    /// Whether the robot collides with these joints, carrying the tool and part as on
+    /// the way to the target, with shapes closer than the margin colliding.
+    /// </summary>
+    public bool Collides(double[] joints, SystemTarget target, double margin)
+    {
+        var programTarget = target.ProgramTargets[0];
+        var kinematics = _system.Kinematics([new JointTarget(joints, programTarget.Target.Tool, frame: programTarget.Target.Frame)])[0];
+        return kinematics.Errors.Count > 0 || Find(kinematics, target, margin) is not null;
+    }
+
+    /// <summary>
+    /// The most any point on the robot, its tool or the part it holds on the way to the
+    /// target can be from a joint axis, so a joint turning by an angle moves no point
+    /// further than this times the angle.
+    /// </summary>
+    public double Reach(SystemTarget target)
+    {
+        var programTarget = target.ProgramTargets[0];
+        var tool = programTarget.Target.Tool;
+        double reach = 0;
+
+        for (int i = 1; i < _defaultPlanes.Length; i++)
+            reach += _defaultPlanes[i].Origin.DistanceTo(_defaultPlanes[i - 1].Origin);
+
+        double extent = _links.SelectMany(pieces => pieces).Select(Extent).DefaultIfEmpty().Max();
+        List<Mesh> carried = [tool.BodyCollisionMesh, .. tool.Jaws.Select(jaw => jaw.CollisionMesh)];
+
+        if (programTarget.Gripper.Held is { } held)
+            carried.Add(held.Local);
+
+        double opening = tool.Jaws.Count > 0 ? tool.Opening.T1 / 2 : 0;
+        extent = Math.Max(extent, carried.SelectMany(ConvexHull.Pieces).Select(Extent).DefaultIfEmpty().Max() + opening);
+        return reach + extent;
+
+        static double Extent(ConvexHull hull)
+        {
+            return ((Vector3d)hull.Center).Length + hull.Radius;
+        }
+    }
+
+    CellContact? Find(KinematicSolution kinematics, SystemTarget target, double margin)
     {
         var programTarget = target.ProgramTargets[0];
         var gripper = programTarget.Gripper;
         var tool = programTarget.Target.Tool;
         var planes = kinematics.Planes;
         var flange = planes[^2];
-        double margin = _options.Distance;
 
         List<Shape> links = new(_links.Sum(pieces => pieces.Length));
 

@@ -13,7 +13,7 @@ public class CreateProgramVariable() : Component(
     GH_Exposure.quarternary)
     , IGH_VariableParameterComponent
 {
-    const string CollisionsDescription = "Avoid collisions in a single-robot cell: the tool and any part it holds against the robot's arm, and the arm, tool and held part against the environment and the parts picked up by Set Gripper. The targets of each Pick and Place are made again turned 180 degrees or moving higher between the pick and place if that clears them, with a warning, and remaining collisions are errors.";
+    const string CollisionsDescription = "Avoid collisions in a single-robot cell: the tool and any part it holds against the robot's arm, and the arm, tool and held part against the environment and the parts picked up by Set Gripper. The targets of each Pick and Place are made again turned 180 degrees or moving higher between the pick and place if that clears them, or else with their joint moves routed around obstacles through joint waypoints, with a warning, and remaining collisions are errors.";
     const string EnvironmentDescription = "Optional fixed geometry to avoid when checking collisions, such as the pedestal and table. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces.";
 
     RobotSystem? _robotSystem;
