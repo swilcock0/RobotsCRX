@@ -1,4 +1,8 @@
-﻿- version: 0.4.0
+﻿- version: 0.4.1
+  changes:
+  - Removed the obsolete components from Robots 1 (Create Program, Create Speed, Create Target, Custom Command and Deconstruct Target) and their upgrade commands. Files that still use them show missing components; replace them with the current ones.
+
+- version: 0.4.0
   changes:
   - Program Simulation's playback stops at a connected Time input rather than pausing whenever it changes: while paused the time still moves the robot, Play runs from where the robot is (from the start if it is already there) and Stop returns to it. Without a connected time, playback runs to the end of the program.
   - The playback speed slider doubles from 0.25 to 128 times, with reverse speeds down to -4 times, and shows the current speed.

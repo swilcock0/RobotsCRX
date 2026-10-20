@@ -33,7 +33,7 @@
 - Domain goo wrappers should inherit the shared `Goo<T, TGoo>` base and add only real custom casting, preview, validation, or serialization behavior.
 - Let the shared component base catch exceptions and show runtime messages; component code should throw clear exceptions instead of propagating failure state.
 - If code reads an input by visible parameter name, update it when the parameter name changes.
-- Obsolete components must keep old GUIDs and port layouts so files deserialize and wires stay attached. Hide them, mark them obsolete, and fail immediately with a clear replacement message.
+- The upstream obsolete components (the old Create Program, Create Speed, Create Target, Custom Command and Deconstruct Target) were removed in RobotsCRX 0.4.1, so files using them show missing components. Components that replace a released one should keep its GUID and read older files.
 - Icons should normally be named after the component/parameter class and loaded by convention.
 
 ## Build
