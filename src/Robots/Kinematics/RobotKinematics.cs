@@ -79,6 +79,14 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             ? configuration
             : null;
 
+        if (PathSampling && prevJoints.HasValue && requested is null
+            && TryContinue(transform, prevJoints, out var continued, out var continuedConfiguration))
+        {
+            solution.Configuration = continuedConfiguration;
+            solution.Joints = continued;
+            return;
+        }
+
         var inverse = GetInverseSolutions(
             transform,
             cartesianTarget.External,
@@ -166,6 +174,180 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             planes[i + 1] = plane;
         }
     }
+
+    /// <summary>
+    /// Set by the motion planner while it solves samples along a path, a short
+    /// step from the previous sample. Cartesian targets are then solved by
+    /// continuation from the previous joints, falling back to the full inverse
+    /// kinematics whenever the result is not clearly the same solution.
+    /// </summary>
+    [field: ThreadStatic]
+    internal static bool PathSampling { get; set; }
+
+    // Tests turn continuation off to compare with the full inverse kinematics.
+    internal static bool ContinuationEnabled { get; set; } = true;
+
+    const int ContinuationIterations = 6;
+    const double ContinuationPositionTolerance = 1e-7;
+    const double ContinuationAngleTolerance = 1e-10;
+    const double ContinuationMaxJointStep = 0.1;
+    const double ContinuationSingularRatio = 1e-3;
+    const double JacobianStep = 1e-7;
+
+    /// <summary>
+    /// Newton iterations on the full pose from the previous joints. Accepts only a
+    /// converged solution close to the previous joints, away from singularities,
+    /// within the joint ranges and with a known configuration.
+    /// </summary>
+    bool TryContinue(Transform target, PreviousJoints previous, out double[] joints, out RobotConfigurations configuration)
+    {
+        configuration = RobotConfigurations.Undefined;
+        joints = previous.Values.ToArray();
+
+        if (!ContinuationEnabled || joints.Length != 6)
+            return false;
+
+        Span<double> error = stackalloc double[6];
+        Span<double> jacobian = stackalloc double[36];
+        Span<double> step = stackalloc double[6];
+
+        for (int iteration = 0; ; iteration++)
+        {
+            var end = ForwardKinematics(joints)[^1];
+            PoseDifference(target, end, error);
+
+            if (Hypot3(error[0], error[1], error[2]) < ContinuationPositionTolerance
+                && Hypot3(error[3], error[4], error[5]) < ContinuationAngleTolerance)
+            {
+                break;
+            }
+
+            if (iteration == ContinuationIterations)
+                return false;
+
+            PoseJacobian(joints, end, jacobian);
+            error.CopyTo(step);
+
+            if (!SolveLinear(jacobian, step))
+                return false;
+
+            for (int i = 0; i < 6; i++)
+                joints[i] += step[i];
+        }
+
+        for (int i = 0; i < 6; i++)
+        {
+            if (Abs(joints[i] - previous[i]) > ContinuationMaxJointStep)
+                return false;
+        }
+
+        // Near singularities the full inverse kinematics decides, and warns.
+        PoseJacobian(joints, ForwardKinematics(joints)[^1], jacobian);
+        double scale = 1 / _a.Concat(_d).Sum(Abs);
+
+        for (int row = 0; row < 3; row++)
+        {
+            for (int column = 0; column < 6; column++)
+                jacobian[row * 6 + column] *= scale;
+        }
+
+        if (JacobianCondition.MinimumSingularRatio(jacobian) < ContinuationSingularRatio)
+            return false;
+
+        return TryGetConfiguration(joints, out configuration);
+    }
+
+    /// <summary>
+    /// Position difference and small rotation vector taking b to a.
+    /// </summary>
+    static void PoseDifference(Transform a, Transform b, Span<double> difference)
+    {
+        difference[0] = a.M03 - b.M03;
+        difference[1] = a.M13 - b.M13;
+        difference[2] = a.M23 - b.M23;
+
+        // R = Ra * Rb^T, whose skew part is sin(angle) * axis.
+        double r10 = a.M10 * b.M00 + a.M11 * b.M01 + a.M12 * b.M02;
+        double r01 = a.M00 * b.M10 + a.M01 * b.M11 + a.M02 * b.M12;
+        double r20 = a.M20 * b.M00 + a.M21 * b.M01 + a.M22 * b.M02;
+        double r02 = a.M00 * b.M20 + a.M01 * b.M21 + a.M02 * b.M22;
+        double r21 = a.M20 * b.M10 + a.M21 * b.M11 + a.M22 * b.M12;
+        double r12 = a.M10 * b.M20 + a.M11 * b.M21 + a.M12 * b.M22;
+        difference[3] = (r21 - r12) * 0.5;
+        difference[4] = (r02 - r20) * 0.5;
+        difference[5] = (r10 - r01) * 0.5;
+    }
+
+    void PoseJacobian(double[] joints, Transform end, Span<double> jacobian)
+    {
+        Span<double> column = stackalloc double[6];
+        double[] perturbed = [.. joints];
+
+        for (int j = 0; j < 6; j++)
+        {
+            perturbed[j] = joints[j] + JacobianStep;
+            PoseDifference(ForwardKinematics(perturbed)[^1], end, column);
+            perturbed[j] = joints[j];
+
+            for (int row = 0; row < 6; row++)
+                jacobian[row * 6 + j] = column[row] / JacobianStep;
+        }
+    }
+
+    /// <summary>
+    /// Solves a 6 x 6 system in place by Gaussian elimination with partial pivoting.
+    /// </summary>
+    static bool SolveLinear(Span<double> matrix, Span<double> vector)
+    {
+        Span<double> m = stackalloc double[36];
+        matrix.CopyTo(m);
+
+        for (int col = 0; col < 6; col++)
+        {
+            int pivot = col;
+
+            for (int row = col + 1; row < 6; row++)
+            {
+                if (Abs(m[row * 6 + col]) > Abs(m[pivot * 6 + col]))
+                    pivot = row;
+            }
+
+            if (Abs(m[pivot * 6 + col]) < 1e-14)
+                return false;
+
+            if (pivot != col)
+            {
+                for (int k = 0; k < 6; k++)
+                    (m[col * 6 + k], m[pivot * 6 + k]) = (m[pivot * 6 + k], m[col * 6 + k]);
+
+                (vector[col], vector[pivot]) = (vector[pivot], vector[col]);
+            }
+
+            for (int row = col + 1; row < 6; row++)
+            {
+                double factor = m[row * 6 + col] / m[col * 6 + col];
+
+                for (int k = col; k < 6; k++)
+                    m[row * 6 + k] -= factor * m[col * 6 + k];
+
+                vector[row] -= factor * vector[col];
+            }
+        }
+
+        for (int row = 5; row >= 0; row--)
+        {
+            double sum = vector[row];
+
+            for (int k = row + 1; k < 6; k++)
+                sum -= m[row * 6 + k] * vector[k];
+
+            vector[row] = sum / m[row * 6 + row];
+        }
+
+        return true;
+    }
+
+    static double Hypot3(double x, double y, double z) => Sqrt(x * x + y * y + z * z);
 
     protected abstract InverseSolutions GetInverseSolutions(
         Transform transform,

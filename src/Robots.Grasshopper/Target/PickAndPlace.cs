@@ -20,8 +20,10 @@ public class PickAndPlace() : Component(
         _ = pManager.AddMeshParameter("Part", "P", "Optional part, where it is before the pick. Program Simulation shows it in Parts.", GH_ParamAccess.item);
         _ = pManager.AddParameter(new SpeedParameter(), "Linear Speed", "S", "Optional speed of the linear moves in and out. Uses the template's speed if omitted.", GH_ParamAccess.item);
         _ = pManager.AddNumberParameter("Wait", "W", "Seconds to wait after the jaws close and after they open.", GH_ParamAccess.item, 0);
+        _ = pManager.AddNumberParameter("Open", "Op", "Optional opening in mm the jaws open to before the pick and to let go. Uses the tool's largest opening if omitted; keep it small enough to clear neighbouring parts.", GH_ParamAccess.item);
         pManager[6].Optional = true;
         pManager[7].Optional = true;
+        pManager[9].Optional = true;
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -40,7 +42,8 @@ public class PickAndPlace() : Component(
             DA.Get<double>(5),
             DA.Maybe<Mesh>(6),
             DA.Maybe<Speed>(7),
-            DA.Get<double>(8));
+            DA.Get<double>(8),
+            DA.MaybeValue<double>(9));
 
         _ = DA.SetDataList(0, targets);
     }

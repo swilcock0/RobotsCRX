@@ -183,6 +183,35 @@ public class GripperTests
     }
 
     [Test]
+    public void PickAndPlaceForcesConfigurationsOnlyOnJointMotions()
+    {
+        CartesianTarget template = new(Plane.WorldXY, RobotConfigurations.Elbow, tool: CreateGripper());
+        Plane pick = new(new Point3d(500, -300, -150), Vector3d.XAxis, -Vector3d.YAxis);
+        Plane place = new(new Point3d(500, 300, -150), Vector3d.XAxis, -Vector3d.YAxis);
+        var targets = PickAndPlace.Create(pick, place, template, 20, 100, 100).Cast<CartesianTarget>();
+
+        Assert.That(
+            targets.Select(target => target.Configuration),
+            Is.EqualTo(new RobotConfigurations?[] { RobotConfigurations.Elbow, null, null, RobotConfigurations.Elbow, null, null }));
+    }
+
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    public void FanucWarnsWhenTheBaseMovesButTargetsUseTheDefaultFrame(bool numberedFrame, bool warns)
+    {
+        // A FANUC system with its base raised, as on a pedestal.
+        var raised = FileIO.ParseRobotSystem(TestRobots.FanucCrx10Xml, new Plane(new Point3d(0, 0, 713), Vector3d.XAxis, Vector3d.YAxis));
+        var robot = ((IndustrialSystem)raised).MechanicalGroups[0].Robot;
+        Frame frame = numberedFrame ? new(Plane.WorldXY, name: "Cell", number: 1) : Frame.Default;
+        JointTarget start = new([.. Start.Select(robot.DegreeToRadian)]);
+        var plane = raised.Kinematics([start])[0].Planes[^1];
+        CartesianTarget move = new(plane, motion: Motions.Linear, frame: frame);
+        Program program = new("Raised", raised, [TestRobots.Toolpath(start, move)]);
+
+        Assert.That(program.Warnings.Any(warning => warning.Contains("default frame (UF0")), Is.EqualTo(warns), string.Join("\n", program.Warnings));
+    }
+
+    [Test]
     public void RejectsPickingWhileHolding()
     {
         var part = Box(0, 1);

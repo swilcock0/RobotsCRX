@@ -39,6 +39,9 @@ class ProgramMotionPlanner
     internal List<MotionSegment> Segments { get; } = [];
     internal List<SystemTarget> FixedTargets { get; }
 
+    // The steps solved between each target and the previous one when checking motions, by target index.
+    readonly Dictionary<int, SystemTarget[]> _checkedSteps = [];
+
     internal ProgramMotionPlanner(Program program, List<SystemTarget> systemTarget, double stepSize)
     {
         _ = CheckFinite(stepSize, nameof(stepSize), "Step size must be finite.");
@@ -187,6 +190,8 @@ class ProgramMotionPlanner
             && !HasModeOtherThan(modes, EndpointMode.Direct)
             && systemTarget.ProgramTargets.All(target => !target.IsJointMotion);
         totalSpeed = default;
+        var steps = new SystemTarget[divisions];
+        _checkedSteps[systemTarget.Index] = steps;
 
         for (int step = 1; step <= divisions; step++)
         {
@@ -215,6 +220,7 @@ class ProgramMotionPlanner
             interTarget.MinTime = speed.MinTime;
             interTarget.TotalTime = time;
             Keyframes.Add(interTarget);
+            steps[step - 1] = interTarget;
             prevStep = interTarget;
 
             if (_program.Errors.Count > 0)
@@ -553,14 +559,51 @@ class ProgramMotionPlanner
     {
         var keyframe = current.ShallowClone();
         _ = current.LerpFractions(previous, _robotSystem, fractions, targets);
-        prevJoints = SolveSample(keyframe, targets, prevJoints, previousKeyframe);
+        prevJoints = SolveSample(keyframe, targets, CheckedSeeds(previous, current, fractions, prevJoints), previousKeyframe);
         SetKeyframeTiming(keyframe, time, previousKeyframe);
         return keyframe;
     }
 
+    /// <summary>
+    /// Checking the motions solved the path between the targets in steps. The step
+    /// nearest a fraction keyframe seeds it, so it is solved from a nearby pose on
+    /// the same path rather than from the previous keyframe, keeping the previous
+    /// keyframe's windings.
+    /// </summary>
+    double[][] CheckedSeeds(SystemTarget previous, SystemTarget current, IReadOnlyList<double> fractions, double[][] prevJoints)
+    {
+        if (!RobotKinematics.ContinuationEnabled || !_checkedSteps.TryGetValue(current.Index, out var steps) || steps.Length == 0)
+            return prevJoints;
+
+        var seeds = new double[prevJoints.Length][];
+
+        for (int group = 0; group < seeds.Length; group++)
+        {
+            int step = (int)Round(Clamp(fractions[group], 0.0, 1.0) * steps.Length);
+            var seed = step == 0
+                ? previous.ProgramTargets[group].Kinematics.Joints
+                : steps[step - 1].ProgramTargets[group].Kinematics.Joints;
+
+            seeds[group] = JointTarget.GetAbsoluteJoints(seed, prevJoints[group]);
+        }
+
+        return seeds;
+    }
+
     double[][] SolveSample(SystemTarget sample, Target[] targets, double[][]? prevJoints, SystemTarget previous)
     {
-        var kinematics = _robotSystem.Kinematics(targets, prevJoints);
+        List<KinematicSolution> kinematics;
+        RobotKinematics.PathSampling = true;
+
+        try
+        {
+            kinematics = _robotSystem.Kinematics(targets, prevJoints);
+        }
+        finally
+        {
+            RobotKinematics.PathSampling = false;
+        }
+
         var joints = kinematics.JointSets(prevJoints);
         sample.SetTargetKinematics(kinematics, _program, previous);
         return joints;

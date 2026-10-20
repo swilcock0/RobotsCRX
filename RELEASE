@@ -1,4 +1,11 @@
-﻿- version: 0.3.2
+﻿- version: 0.3.3
+  changes:
+  - Programs plan much faster on FANUC CRX robots, around 60 times for a 100-part pick and place: samples along a path are solved by continuation from the previous sample, falling back to the full inverse kinematics near singularities or for large steps, with the same results.
+  - Fanuc programs warn when the robot base is not at the world origin but Cartesian targets use the default frame, as their TP positions would be offset by the base.
+  - Pick and Place only forces the template's configuration on its joint motions.
+  - Pick and Place has an Open input for the opening before a pick and when letting go, to clear neighbouring parts.
+
+- version: 0.3.2
   changes:
   - Load Robot System has an optional Joint Limits input that narrows the robot arm's joint ranges in order, in library degrees; joints after the last limit, or given a single number such as -1, keep their full range. Inverse kinematics only picks solutions within them, targets outside them are errors, and Stream Joints refuses joints outside them.
   - Check Collisions has a Parts input to leave parts held by Set Gripper out of the tool's collision mesh.

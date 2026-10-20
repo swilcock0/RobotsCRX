@@ -1,4 +1,6 @@
-﻿using Robots.Commands;
+﻿using Rhino.Geometry;
+using Robots.Commands;
+using static Robots.Util;
 
 namespace Robots;
 
@@ -7,6 +9,26 @@ class FanucPostProcessor : IPostProcessor
     public CommandFormatter Commands => FanucCommandFormatter.Instance;
 
     public void Save(IProgram program, string folder) => FanucProgramFile.Save(program, folder);
+
+    public void Validate(Program program, IReadOnlyList<ProgramTarget> targets)
+    {
+        PostProcessorUtil.RejectProcessMotions(program, targets);
+
+        // The default frame is UF0, the controller's frame at the robot base, but
+        // positions are written relative to the world origin.
+        var basePlane = program.RobotSystem.BasePlane;
+        bool baseMoved = basePlane.Origin.DistanceTo(Point3d.Origin) > DistanceTol
+            || (basePlane.XAxis - Vector3d.XAxis).Length > UnitTol
+            || (basePlane.YAxis - Vector3d.YAxis).Length > UnitTol;
+
+        if (baseMoved && targets.FirstOrDefault(target => !target.IsJointTarget && ReferenceEquals(target.Target.Frame, Frame.Default)) is { } first)
+        {
+            program.AddWarning(
+                "The robot base is not at the world origin, but Cartesian targets use the default frame (UF0, the robot base on the controller), so their positions in the TP program are offset by the base. Use a numbered frame and set it on the controller.",
+                first.Index,
+                first.Group);
+        }
+    }
 
     public List<List<List<string>>> GetCode(RobotSystem system, Program program)
     {

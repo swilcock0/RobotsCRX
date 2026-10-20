@@ -20,7 +20,8 @@ public static class PickAndPlace
     /// <param name="part">Optional part, where it is before the pick.</param>
     /// <param name="linearSpeed">Speed of the linear motions, the template's speed if omitted.</param>
     /// <param name="wait">Seconds to wait after the jaws close and after they open.</param>
-    public static Target[] Create(Plane pick, Plane place, Target template, double grip, double approach, double retreat, Mesh? part = null, Speed? linearSpeed = null, double wait = 0)
+    /// <param name="open">Opening the jaws open to, the tool's largest if omitted. Keep it small between closely spaced parts.</param>
+    public static Target[] Create(Plane pick, Plane place, Target template, double grip, double approach, double retreat, Mesh? part = null, Speed? linearSpeed = null, double wait = 0, double? open = null)
     {
         var tool = template.Tool;
 
@@ -31,23 +32,24 @@ public static class PickAndPlace
         ArgumentOutOfRangeException.ThrowIfNegative(Util.CheckFinite(retreat, nameof(retreat)), nameof(retreat));
         ArgumentOutOfRangeException.ThrowIfNegative(Util.CheckFinite(wait, nameof(wait)), nameof(wait));
 
-        double open = tool.Opening.T1;
+        double opening = open ?? tool.Opening.T1;
         var linear = linearSpeed ?? template.Speed;
         var configuration = (template as CartesianTarget)?.Configuration;
 
         return
         [
-            Move(Offset(pick, approach), Motions.Joint, template.Speed, Zone.Default, new SetGripper(open)),
+            Move(Offset(pick, approach), Motions.Joint, template.Speed, Zone.Default, new SetGripper(opening)),
             Move(pick, Motions.Linear, linear, Zone.Default, Gripper(grip, part)),
             Move(Offset(pick, retreat), Motions.Linear, linear, template.Zone),
             Move(Offset(place, approach), Motions.Joint, template.Speed, template.Zone),
-            Move(place, Motions.Linear, linear, Zone.Default, Gripper(open, null)),
+            Move(place, Motions.Linear, linear, Zone.Default, Gripper(opening, null)),
             Move(Offset(place, retreat), Motions.Linear, linear, template.Zone),
         ];
 
         CartesianTarget Move(Plane plane, Motions motion, Speed speed, Zone zone, Command? command = null)
         {
-            return new(plane, configuration, motion, tool, speed, zone, command, template.Frame, template.External, template.ExternalCustom);
+            // A configuration only applies to joint motions.
+            return new(plane, motion == Motions.Joint ? configuration : null, motion, tool, speed, zone, command, template.Frame, template.External, template.ExternalCustom);
         }
 
         Command Gripper(double opening, Mesh? held)
