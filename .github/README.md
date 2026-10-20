@@ -21,6 +21,8 @@
 
 *[Watch the pick and place test in Rhino and Grasshopper](https://youtu.be/CfQiHFo9NpI)*
 
+*[And with obstacle avoidance using RRTConnect](https://youtu.be/vWNlOqq05l8)*
+
 </div>
 
 ## RobotsCRX
