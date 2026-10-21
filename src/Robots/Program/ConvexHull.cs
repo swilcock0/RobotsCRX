@@ -35,6 +35,16 @@ sealed class ConvexHull
     public static ConvexHull FromPoints(IEnumerable<Point3d> points) => new(Extremes([.. points]));
 
     /// <summary>
+    /// The hull moved by a transform, which is much quicker than finding the hull of a moved mesh.
+    /// </summary>
+    public ConvexHull Transformed(Transform transform) => new([.. Points.Select(point =>
+    {
+        var moved = point;
+        moved.Transform(transform);
+        return moved;
+    })]);
+
+    /// <summary>
     /// The hull with its points in the coordinates of a plane.
     /// </summary>
     public ConvexHull InPlane(Plane plane) => new([.. Points.Select(point =>

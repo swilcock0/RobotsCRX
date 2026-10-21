@@ -26,6 +26,16 @@ sealed class GrippedPart(Mesh part, int group, ProgramTarget grasp, int graspEve
     /// </summary>
     internal Mesh Local => field ??= Moved(Part, Transform.PlaneToPlane(Flange(Grasp.Kinematics), Plane.WorldXY));
 
+    /// <summary>
+    /// The hulls of the part relative to the flange, moved from the hulls of the part, which are found once.
+    /// </summary>
+    internal ConvexHull[] LocalHulls => field ??= Moved(ConvexHull.Pieces(Part), Transform.PlaneToPlane(Flange(Grasp.Kinematics), Plane.WorldXY));
+
+    /// <summary>
+    /// The hulls of the part where it was let go, or null if it is never let go.
+    /// </summary>
+    internal ConvexHull[]? PlacedHulls => Release is null ? null : field ??= Moved(LocalHulls, Transform.PlaneToPlane(Plane.WorldXY, Flange(Release.Kinematics)));
+
     public bool IsHeld(int events) => events > GraspEvent && events <= ReleaseEvent;
 
     /// <summary>
@@ -54,6 +64,8 @@ sealed class GrippedPart(Mesh part, int group, ProgramTarget grasp, int graspEve
     public Tool Carried(Tool tool) => _tools.GetOrAdd(tool, value => value.WithAttached(Local));
 
     static Plane Flange(KinematicSolution kinematics) => kinematics.Planes[^2];
+
+    static ConvexHull[] Moved(ConvexHull[] hulls, Transform transform) => [.. hulls.Select(hull => hull.Transformed(transform))];
 
     static Mesh Moved(Mesh mesh, Transform transform)
     {

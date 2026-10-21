@@ -149,6 +149,146 @@ public class CollisionCheckerTests
     }
 
     [Test]
+    public void CreateProgramRoutesOtherJointMoves()
+    {
+        var cell = Cell.Create(parts: 3);
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(2000)] };
+
+        // Plain joint moves between two points, with no pick and place.
+        List<Target> targets = [cell.Start, cell.Above(cell.Picks[0]), cell.Above(cell.Places[0]), cell.Above(cell.Picks[1])];
+
+        var kept = new Program("Cell", cell.System, [new SimpleToolpath(targets)], collisions: options with { Avoid = false });
+        var avoided = new Program("Cell", cell.System, [new SimpleToolpath(targets)], collisions: options);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.Errors, Has.Some.Contains("environment mesh 2"));
+            Assert.That(avoided.Errors, Is.Empty);
+            Assert.That(avoided.Warnings, Has.Some.Contains("Joint move routed"));
+            Assert.That(avoided.Targets, Has.Count.GreaterThan(targets.Count));
+        });
+    }
+
+    [Test]
+    public void CreateProgramLeavesCollidingLinearMovesAsErrors()
+    {
+        var cell = Cell.Create(parts: 3);
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(2000)] };
+
+        // Straight through the post, which routing cannot change.
+        Plane across = new(new Point3d(700, -905, 215), Down.XAxis, Down.YAxis);
+        CartesianTarget line = new(across, cell.Template, motion: Motions.Linear);
+        var program = new Program("Cell", cell.System, [new SimpleToolpath([cell.Start, cell.Above(cell.Picks[0]), line])], collisions: options);
+
+        Assert.That(program.Errors, Has.Some.Contains("Collision"));
+    }
+
+    [Test]
+    public void CreateProgramLiftsNoMoreThanEachPickAndPlaceNeeds()
+    {
+        var cell = Cell.Create(parts: 4);
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, Post(400)] };
+
+        var lifts = cell.Program(options).Warnings
+            .Select(warning => System.Text.RegularExpressions.Regex.Match(warning, @"lifted (\d+) mm"))
+            .Where(match => match.Success)
+            .Select(match => int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture))
+            .ToArray();
+
+        Assert.That(lifts, Is.Not.Empty);
+        Assert.That(lifts, Has.All.LessThanOrEqualTo(500), "No higher than a 400 mm wall needs.");
+    }
+
+    [Test]
+    public void CreateProgramReachesPickAndPlacesInAnotherArmConfiguration()
+    {
+        var cell = Cell.Create(parts: 2);
+
+        // A block where the elbow is when the arm reaches the first pick in the configuration the solver chooses.
+        var plain = new Program("Cell", cell.System, [new SimpleToolpath([cell.Start, cell.Above(cell.Picks[0])])]);
+        var elbow = plain.Targets[^1].ProgramTargets[0].Kinematics.Planes[3].Origin;
+        var block = Box(new(elbow.X - 120, elbow.X + 120), new(elbow.Y - 120, elbow.Y + 120), new(elbow.Z - 120, elbow.Z + 120));
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, block] };
+
+        var kept = cell.Program(options with { Avoid = false });
+        var avoided = cell.Program(options);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.Errors, Has.Some.Contains("environment mesh 2"));
+            Assert.That(avoided.Errors, Is.Empty);
+            Assert.That(avoided.Warnings, Has.Some.Contains("configuration"));
+        });
+    }
+
+    [Test]
+    public void CreateProgramReconfiguresOtherTargetsToClearLinearMoves()
+    {
+        var cell = Cell.Create(parts: 2);
+
+        // A joint move above the pick, then straight down to it, with a block where the elbow is at the bottom in the configuration the solver chooses.
+        CartesianTarget down = new(cell.Picks[0], cell.Template, motion: Motions.Linear);
+        List<Target> targets = [cell.Start, cell.Above(cell.Picks[0]), down];
+        var plain = new Program("Cell", cell.System, [new SimpleToolpath(targets)]);
+        var elbow = plain.Targets[^1].ProgramTargets[0].Kinematics.Planes[3].Origin;
+        var block = Box(new(elbow.X - 40, elbow.X + 40), new(elbow.Y - 40, elbow.Y + 40), new(elbow.Z - 40, elbow.Z + 40));
+        var options = cell.Options with { Environment = [.. cell.Options.Environment, block] };
+
+        var kept = new Program("Cell", cell.System, [new SimpleToolpath(targets)], collisions: options with { Avoid = false });
+        var avoided = new Program("Cell", cell.System, [new SimpleToolpath(targets)], collisions: options);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(kept.Errors, Has.Some.Contains("environment mesh 2"));
+            Assert.That(avoided.Errors, Is.Empty);
+            Assert.That(avoided.Warnings, Has.Some.Contains("configuration"));
+        });
+    }
+
+    [Test]
+    public void CheckFindsABlockOnThePathOfALongJointMove()
+    {
+        var cell = Cell.Create(parts: 1);
+
+        // The whole way round, with only the tool passing through a small block on its path.
+        JointTarget end = new([.. new double[] { 170, 20, 30, 0, -60, 0 }.Select(degrees => degrees * PI / 180)], cell.Template.Tool);
+        Program program = new("Swing", cell.System, [new SimpleToolpath([cell.Start, end])]);
+        Assert.That(program.Errors, Is.Empty);
+
+        program.Animate(program.Duration * 0.4, false);
+        var tip = program.CurrentSimulationPose.Kinematics[0].Planes[^1].Origin;
+        var block = Box(new(tip.X - 20, tip.X + 20), new(tip.Y - 20, tip.Y + 20), new(tip.Z - 20, tip.Z + 20));
+
+        var found = program.CheckCellCollisions(new CollisionOptions { Environment = [block], Parts = false });
+
+        Assert.That(found, Has.Count.EqualTo(1), "Skipping poses far from everything must not step over it.");
+    }
+
+    [Test]
+    public void ConvexHullMovedWithATransformMatchesTheHullOfTheMovedMesh()
+    {
+        var mesh = Box(new(-150, 150), new(-20, 20), new(-9, 19));
+        Random random = new(3);
+        Transform move = Transform.Rotation(0.7, new Vector3d(1, 2, 3), new Point3d(10, 20, 30)) * Transform.Translation(100, -200, 300);
+
+        var moved = mesh.DuplicateMesh();
+        _ = moved.Transform(move);
+        var expected = ConvexHull.Pieces(moved);
+        var actual = ConvexHull.Pieces(mesh).Select(hull => hull.Transformed(move)).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(actual, Has.Length.EqualTo(expected.Length));
+
+            for (int i = 0; i < 50; i++)
+            {
+                Vector3d direction = new(random.NextDouble() - 0.5, random.NextDouble() - 0.5, random.NextDouble() - 0.5);
+                Assert.That(actual[0].Support(direction).DistanceTo(expected[0].Support(direction)), Is.LessThan(1e-3), "Mesh vertices are stored as floats.");
+            }
+        });
+    }
+
+    [Test]
     public void JointRouterGoesAroundAnObstacle()
     {
         Interval[] ranges = [.. Enumerable.Repeat(new Interval(-PI, PI), 6)];
@@ -261,6 +401,12 @@ public class CollisionCheckerTests
             Mesh table = Box(new(-1200, 1200), new(-1200, 1200), new(-30, -10));
 
             return new(system, start, template, picks, places, struts, new() { Environment = [pedestal, table] });
+        }
+
+        // A joint move to a point 200 mm above the plane.
+        public CartesianTarget Above(Plane plane)
+        {
+            return new(new Plane(plane.Origin + (Vector3d.ZAxis * 200), plane.XAxis, plane.YAxis), Template);
         }
 
         public Program Program(CollisionOptions? options = null)

@@ -50,35 +50,43 @@ sealed class PickAndPlaceJob(Plane pick, Plane place, Target template, double gr
     public Mesh? Part { get; } = part;
     public bool Symmetric { get; } = symmetric;
 
+    /// <summary>
+    /// The configuration of the template's joint motions, or null to let the solver choose.
+    /// </summary>
+    public RobotConfigurations? Configuration { get; } = (template as CartesianTarget)?.Configuration;
+
     /// <param name="pickRotation">Degrees the tool is turned about its Z axis at the pick.</param>
     /// <param name="placeRotation">Degrees the tool is turned about its Z axis at the place.</param>
     /// <param name="lift">Millimeters along the tool's Z axis above the approach and retreat to move between the pick and place at.</param>
-    public Target[] Targets(double pickRotation, double placeRotation, double lift)
+    /// <param name="pickArm">Configuration of the joint motion to the pick, the template's if omitted.</param>
+    /// <param name="placeArm">Configuration of the joint motion to the place, the template's if omitted.</param>
+    public Target[] Targets(double pickRotation, double placeRotation, double lift, RobotConfigurations? pickArm = null, RobotConfigurations? placeArm = null)
     {
         var pick = Turned(Pick, pickRotation);
         var place = Turned(Place, placeRotation);
         var linear = linearSpeed ?? template.Speed;
-        var configuration = (template as CartesianTarget)?.Configuration;
+        var atPick = pickArm ?? Configuration;
+        var atPlace = placeArm ?? Configuration;
 
         Target[] targets = lift == 0
             ?
             [
-                Move(Offset(pick, approach), Motions.Joint, template.Speed, Zone.Default, new SetGripper(opening)),
+                Move(Offset(pick, approach), Motions.Joint, template.Speed, Zone.Default, new SetGripper(opening), atPick),
                 Move(pick, Motions.Linear, linear, Zone.Default, Gripper(grip, Part)),
                 Move(Offset(pick, retreat), Motions.Linear, linear, template.Zone),
-                Move(Offset(place, approach), Motions.Joint, template.Speed, template.Zone),
+                Move(Offset(place, approach), Motions.Joint, template.Speed, template.Zone, null, atPlace),
                 Move(place, Motions.Linear, linear, Zone.Default, Gripper(opening, null)),
                 Move(Offset(place, retreat), Motions.Linear, linear, template.Zone),
             ]
             :
             [
                 // Straight up and down between the lifted points and the approach and retreat.
-                Move(Offset(pick, approach + lift), Motions.Joint, template.Speed, template.Zone),
+                Move(Offset(pick, approach + lift), Motions.Joint, template.Speed, template.Zone, null, atPick),
                 Move(Offset(pick, approach), Motions.Linear, template.Speed, Zone.Default, new SetGripper(opening)),
                 Move(pick, Motions.Linear, linear, Zone.Default, Gripper(grip, Part)),
                 Move(Offset(pick, retreat), Motions.Linear, linear, template.Zone),
                 Move(Offset(pick, retreat + lift), Motions.Linear, template.Speed, template.Zone),
-                Move(Offset(place, approach + lift), Motions.Joint, template.Speed, template.Zone),
+                Move(Offset(place, approach + lift), Motions.Joint, template.Speed, template.Zone, null, atPlace),
                 Move(Offset(place, approach), Motions.Linear, template.Speed, template.Zone),
                 Move(place, Motions.Linear, linear, Zone.Default, Gripper(opening, null)),
                 Move(Offset(place, retreat), Motions.Linear, linear, template.Zone),
@@ -90,10 +98,10 @@ sealed class PickAndPlaceJob(Plane pick, Plane place, Target template, double gr
 
         return targets;
 
-        CartesianTarget Move(Plane plane, Motions motion, Speed speed, Zone zone, Command? command = null)
+        CartesianTarget Move(Plane plane, Motions motion, Speed speed, Zone zone, Command? command = null, RobotConfigurations? arm = null)
         {
             // A configuration only applies to joint motions.
-            return new(plane, motion == Motions.Joint ? configuration : null, motion, template.Tool, speed, zone, command, template.Frame, template.External, template.ExternalCustom);
+            return new(plane, motion == Motions.Joint ? arm : null, motion, template.Tool, speed, zone, command, template.Frame, template.External, template.ExternalCustom);
         }
 
         Command Gripper(double opening, Mesh? held)
@@ -107,13 +115,24 @@ sealed class PickAndPlaceJob(Plane pick, Plane place, Target template, double gr
     /// <summary>
     /// The part where it is let go, picked and placed with the tool turned by the rotations.
     /// </summary>
+    /// <summary>
+    /// The index of the joint motion to the place, which the targets after it are for.
+    /// </summary>
+    public static int PlaceIndex(double lift) => lift == 0 ? 3 : 5;
+
+    /// <summary>
+    /// How the part moves from the pick to the place, picked and placed with the tool turned by the rotations.
+    /// </summary>
+    public Transform Placement(double pickRotation, double placeRotation) =>
+        Transform.PlaneToPlane(Turned(Pick, pickRotation), Turned(Place, placeRotation));
+
     public Mesh? Placed(double pickRotation, double placeRotation)
     {
         if (Part is null)
             return null;
 
         var placed = Part.DuplicateMesh();
-        _ = placed.Transform(Transform.PlaneToPlane(Turned(Pick, pickRotation), Turned(Place, placeRotation)));
+        _ = placed.Transform(Placement(pickRotation, placeRotation));
         return placed;
     }
 

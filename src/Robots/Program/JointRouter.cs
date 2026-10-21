@@ -15,7 +15,7 @@ namespace Robots;
 sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double resolution, int seed)
 {
     const double Step = 0.3;
-    const int MaxIterations = 3000;
+    const int MaxIterations = 1500;
     const int ShortcutIterations = 150;
 
     readonly record struct Node(double[] Joints, int Parent);

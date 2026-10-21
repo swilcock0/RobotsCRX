@@ -107,7 +107,7 @@ public class Program : IProgram
         CheckName(name, robotSystem);
 
         if (collisions is { Avoid: true } && toolpaths is [var toolpath] && robotSystem.RobotCount == 1)
-            toolpaths = [new SimpleToolpath(PickAndPlacePlanner.Plan(this, toolpath.Targets, initCommands, stepSize, collisions))];
+            toolpaths = [new SimpleToolpath(CollisionPlanner.Plan(this, toolpath.Targets, initCommands, stepSize, collisions))];
 
         var targets = CreateSystemTargets(toolpaths);
 

@@ -1,4 +1,14 @@
-﻿- version: 0.4.2
+﻿- version: 0.5.0
+  changes:
+  - Programs avoiding collisions (Create Program with Collisions on) do much more to avoid them. Pick and Place and the rest of the program are changed, in this order, keeping the arm as it is wherever it can: a pick and place is made again unturned or turned 180 degrees with the lowest lift that clears, up to 1000 mm; then with its joint moves routed around the obstacles through a few joint waypoints (RRT-Connect, shortened to as few waypoints as it can, the same each time, and joining routes found before); then with the arm in another configuration, such as the other shoulder, elbow or wrist, which can be different at the pick and the place; and of the options that clear, the one whose joints move the least is used. Warnings say what changed.
+  - The rest of the program is treated the same way: any joint move that collides is routed around the obstacle or reaches its target in another configuration, and where a collision is left on a linear move, the joint move before it is tried in its other configurations. Linear moves are kept as they are.
+  - If planning leaves errors besides collisions that the targets as given do not have, such as a target out of reach, the targets are kept as given, with a warning. Warnings about added targets keep pointing at the right ones.
+  - Collision checks take enough poses along a joint move that no point of the arm, tool or held part moves more than the linear step between two, as documented. Before, they took one every 10 degrees of joint rotation, which on a long swing at full reach moves the tool about 25 centimetres between poses.
+  - Planning is much faster. A program that is already clear is checked once and left as it is, about as fast as a plain collision check; where it is not, only the pick and places that collide are changed, the lift one needed is tried first for the next, and pick and places that collide where the gripper goes in or out are not lifted, as no lift changes that. A cell of 10 pick and places with a wall plans in about 3 seconds. Collision checks skip obstacles that stay still by their bounding box and, on a joint move, poses far from everything, with the same results as before; and the hull of a part is found once rather than for every held and placed copy.
+  - Added a collision avoidance guide (docs/Collision-avoidance.md).
+  - The multi-part pick and place example shows the Collisions input with a wall in the way.
+
+- version: 0.4.2
   changes:
   - Fixed "Target out of reach" on joint motions that some arm configuration can reach, with the solver choosing the configuration itself. An unreachable configuration has placeholder joints, such as zeros, and could be picked as the closest to the previous joints when the robot started from zeros. Joint motions now only pick one of those if no configuration reaches the target. Linear motions keep their configuration and still report a singularity rather than change it.
 
