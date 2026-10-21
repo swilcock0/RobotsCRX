@@ -1,4 +1,10 @@
-﻿- version: 0.5.0
+﻿- version: 0.4.4
+  changes:
+  - A piece of the environment the robot's base sits on, such as its pedestal, is its mount, which the first link, turning on it about J1, may touch too. Before, a pedestal reaching up past the base made every target collide with link 1, and collision avoidance tried every option for nothing.
+  - Collision avoidance plans faster, with the same robot code and warnings as before: a cell of 10 pick and places with a wall plans in about 2.5 seconds. Joint moves are checked in steps as long as the arm, tool and held part are far from everything, which still cannot step over an obstacle; joint routing skips the poses those checks show are clear; the final program is planned once rather than twice; and lifted options stop checking at their first collision.
+  - Inverse kinematics is faster for robots with an offset wrist, such as the CRX, which also speeds up programs without collision checks: a target solved from scratch reuses what it found before for the same target, and following a path reuses the unchanged part of the arm's forward kinematics.
+
+- version: 0.4.3
   changes:
   - Programs avoiding collisions (Create Program with Collisions on) do much more to avoid them. Pick and Place and the rest of the program are changed, in this order, keeping the arm as it is wherever it can: a pick and place is made again unturned or turned 180 degrees with the lowest lift that clears, up to 1000 mm; then with its joint moves routed around the obstacles through a few joint waypoints (RRT-Connect, shortened to as few waypoints as it can, the same each time, and joining routes found before); then with the arm in another configuration, such as the other shoulder, elbow or wrist, which can be different at the pick and the place; and of the options that clear, the one whose joints move the least is used. Warnings say what changed.
   - The rest of the program is treated the same way: any joint move that collides is routed around the obstacle or reaches its target in another configuration, and where a collision is left on a linear move, the joint move before it is tried in its other configurations. Linear moves are kept as they are.
