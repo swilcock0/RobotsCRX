@@ -1,4 +1,6 @@
-﻿using Rhino.Geometry;
+﻿using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
+using Rhino.Geometry;
 using static System.Math;
 using static Robots.GeometryMath;
 using static Robots.Util;
@@ -33,7 +35,11 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
     static readonly double[] FallbackChartPhases =
         [PI / 4, 3 * PI / 4, PI / 8, 3 * PI / 8, 5 * PI / 8, 7 * PI / 8];
 
+    // The most targets whose joint 6 roots are kept, which planning solves again and again from different joints.
+    const int MaxCachedTargets = 4096;
+
     readonly Joint[] _joints = robot.Joints;
+    readonly ConcurrentDictionary<TargetKey, Joint6Roots?> _joint6Roots = [];
     readonly double _maxReach = GetChainLength(robot.Joints);
     readonly double _geometryScale = GetGeometryScale(robot.Joints);
     readonly double _jacobianScale = GetJacobianScale(robot.Joints);
@@ -296,6 +302,52 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
 
         var wrist = ScaleTarget(transform, out var scaledA, out var scaledD, out var scaledTarget);
 
+        if (_joint6Roots.Count >= MaxCachedTargets)
+            _joint6Roots.Clear();
+
+        var charts = _joint6Roots.GetOrAdd(new(transform), _ => GetChartRoots(scaledA, scaledD, in wrist, scaledTarget));
+
+        if (charts is null)
+        {
+            errors.Add("Analytical inverse kinematics could not resolve this target.");
+            return [];
+        }
+
+        // The roots that depend on the previous joints too, refined like the chart roots and in the same order after them.
+        List<double> joint6Values = new(32);
+        List<double> tangentSeeds = [];
+
+        AddShoulderBoundaryRoots(scaledD[2], in wrist, previous, joint6Values);
+        AddAxis4BoundaryRoots(scaledD[2], in wrist, previous, joint6Values, tangentSeeds);
+
+        if (previous.HasValue)
+            joint6Values.Add(NormalizeAngle(previous[5]));
+
+        List<double> all = new(charts.Roots.Length + charts.Refined.Length + charts.Tangents.Length + (joint6Values.Count * 5));
+        all.AddRange(charts.Roots);
+        all.AddRange(joint6Values);
+        all.AddRange(charts.Refined);
+        RefineJoint6Roots(scaledA, scaledD, in wrist, joint6Values, all);
+        all.AddRange(charts.Tangents);
+        AddTangentRoots(scaledA, scaledD, in wrist, tangentSeeds, all);
+        all.Sort();
+        List<PrincipalSolution> principal = new(32);
+
+        foreach (double joint6 in all)
+            BackSubstitute(scaledA, scaledD, in wrist, transform, joint6, previous, principal, requested);
+
+        if (principal.Count == 0)
+            errors.Add(OutOfReachError);
+
+        return principal;
+    }
+
+    /// <summary>
+    /// The joint 6 roots of the charts of a target, refined, and those found about their tangencies,
+    /// which only depend on the target, or null if no chart pair covers it.
+    /// </summary>
+    static Joint6Roots? GetChartRoots(double[] scaledA, double[] scaledD, in WristContext wrist, Transform scaledTarget)
+    {
         List<double> joint6Values = new(32);
         List<double> tangentSeeds = new(WristPolynomial.MaxDegree);
 
@@ -346,28 +398,13 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
         }
 
         if (!chartsCovered)
-        {
-            errors.Add("Analytical inverse kinematics could not resolve this target.");
-            return [];
-        }
+            return null;
 
-        AddShoulderBoundaryRoots(scaledD[2], in wrist, previous, joint6Values);
-        AddAxis4BoundaryRoots(scaledD[2], in wrist, previous, joint6Values, tangentSeeds);
-
-        if (previous.HasValue)
-            joint6Values.Add(NormalizeAngle(previous[5]));
-
-        RefineJoint6Roots(scaledA, scaledD, in wrist, joint6Values, tangentSeeds);
-        joint6Values.Sort();
-        List<PrincipalSolution> principal = new(32);
-
-        foreach (double joint6 in joint6Values)
-            BackSubstitute(scaledA, scaledD, in wrist, transform, joint6, previous, principal, requested);
-
-        if (principal.Count == 0)
-            errors.Add(OutOfReachError);
-
-        return principal;
+        List<double> refined = [];
+        RefineJoint6Roots(scaledA, scaledD, in wrist, joint6Values, refined);
+        List<double> tangents = [];
+        AddTangentRoots(scaledA, scaledD, in wrist, tangentSeeds, tangents);
+        return new([.. joint6Values], [.. refined], [.. tangents]);
     }
 
     static bool AddChartPair(
@@ -620,19 +657,16 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
         }
     }
 
+    // Adds the roots refined from each root on each branch.
     static void RefineJoint6Roots(
         double[] a,
         double[] d,
         in WristContext wrist,
-        List<double> joint6Values,
-        List<double> tangentSeeds)
+        List<double> roots,
+        List<double> joint6Values)
     {
-        int rootCount = joint6Values.Count;
-
-        for (int rootIndex = 0; rootIndex < rootCount; rootIndex++)
+        foreach (double root in roots)
         {
-            double root = joint6Values[rootIndex];
-
             for (int radiusSign = -1; radiusSign <= 1; radiusSign += 2)
             {
                 for (int combinedSign = -1; combinedSign <= 1; combinedSign += 2)
@@ -651,7 +685,16 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
                 }
             }
         }
+    }
 
+    // Adds the roots crossing and touching the reach about each seed on each branch.
+    static void AddTangentRoots(
+        double[] a,
+        double[] d,
+        in WristContext wrist,
+        List<double> tangentSeeds,
+        List<double> joint6Values)
+    {
         foreach (double root in tangentSeeds)
         {
             for (int radiusSign = -1; radiusSign <= 1; radiusSign += 2)
@@ -1981,6 +2024,37 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
     readonly record struct PrincipalSolution(
         double[] Joints,
         RobotConfigurations Configuration);
+
+    // The joint 6 roots of a target's charts, as they were found, refined, and about the tangencies.
+    sealed record Joint6Roots(double[] Roots, double[] Refined, double[] Tangents);
+
+    // A target transform by the bits of its values, so values that compare equal but solve differently, such as 0 and -0, are told apart.
+    readonly struct TargetKey : IEquatable<TargetKey>
+    {
+        readonly long[] _bits;
+
+        public TargetKey(Transform transform)
+        {
+            _bits = new long[16];
+
+            for (int row = 0; row < 4; row++)
+            {
+                for (int column = 0; column < 4; column++)
+                    _bits[row * 4 + column] = BitConverter.DoubleToInt64Bits(transform[row, column]);
+            }
+        }
+
+        public bool Equals(TargetKey other) => _bits.AsSpan().SequenceEqual(other._bits);
+
+        public override bool Equals(object? obj) => obj is TargetKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            HashCode hash = new();
+            hash.AddBytes(MemoryMarshal.AsBytes(_bits.AsSpan()));
+            return hash.ToHashCode();
+        }
+    }
 
     readonly record struct WristContext(
         Vector3d Rx,

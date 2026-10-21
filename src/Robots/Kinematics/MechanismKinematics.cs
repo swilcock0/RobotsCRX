@@ -106,33 +106,27 @@ abstract class MechanismKinematics
         }
     }
 
-    protected Transform[] ModifiedDH(double[] joints)
+    /// <summary>
+    /// The chain of modified DH transforms from the joint at the index on, the ones before it being those of the same joints already.
+    /// </summary>
+    protected void ModifiedDH(double[] joints, Span<Transform> transforms, int from = 0)
     {
-        var t = new Transform[joints.Length];
+        ArgumentOutOfRangeException.ThrowIfLessThan(transforms.Length, joints.Length, nameof(transforms));
 
-        for (int i = 0; i < joints.Length; i++)
+        for (int i = from; i < joints.Length; i++)
         {
             var c = Cos(joints[i]);
             var s = Sin(joints[i]);
+            Transform current = default;
 
-            t[i].Set(
+            current.Set(
             c, -s, 0, _a[i],
             s * _cα[i], c * _cα[i], -_sα[i], -_d[i] * _sα[i],
             s * _sα[i], c * _sα[i], _cα[i], _d[i] * _cα[i]
             );
+
+            transforms[i] = i == 0 ? current : transforms[i - 1] * current;
         }
-
-        for (int i = 1; i < joints.Length; i++)
-            t[i] = t[i - 1] * t[i];
-
-        return t;
-    }
-
-    protected Transform[] DH(double[] joints)
-    {
-        var t = new Transform[joints.Length];
-        DH(joints, t);
-        return t;
     }
 
     protected static double GetChainLength(IReadOnlyList<Joint> joints)
@@ -145,11 +139,14 @@ abstract class MechanismKinematics
         return length;
     }
 
-    protected void DH(double[] joints, Span<Transform> transforms)
+    /// <summary>
+    /// The chain of DH transforms from the joint at the index on, the ones before it being those of the same joints already.
+    /// </summary>
+    protected void DH(double[] joints, Span<Transform> transforms, int from = 0)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(transforms.Length, joints.Length, nameof(transforms));
 
-        for (int i = 0; i < joints.Length; i++)
+        for (int i = from; i < joints.Length; i++)
         {
             var c = Cos(joints[i]);
             var s = Sin(joints[i]);

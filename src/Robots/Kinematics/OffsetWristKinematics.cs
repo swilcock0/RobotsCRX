@@ -153,10 +153,9 @@ class OffsetWristKinematics(RobotArm robot) : ConfigurationKinematics(robot)
         return joints;
     }
 
-    protected override Transform[] ForwardKinematics(double[] joints)
+    protected override void ForwardKinematics(double[] joints, Span<Transform> transforms, int from)
     {
-        var t = DH(joints);
-        t[5] *= _flangeRot;
-        return t;
+        DH(joints, transforms, from);
+        transforms[5] *= _flangeRot;
     }
 }

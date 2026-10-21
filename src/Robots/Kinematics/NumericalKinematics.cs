@@ -51,12 +51,12 @@ class NumericalKinematics(RobotArm robot, bool useModifiedDH, int? redundant) : 
         return true;
     }
 
-    protected override Transform[] ForwardKinematics(double[] joints)
+    protected override void ForwardKinematics(double[] joints, Span<Transform> transforms, int from)
     {
         if (_useModifiedDH)
-            return ModifiedDH(joints);
-
-        return DH(joints);
+            ModifiedDH(joints, transforms, from);
+        else
+            DH(joints, transforms, from);
     }
 
     double[] SolveInverse(Transform t, double[] external, PreviousJoints prevJoints, out List<string> errors)

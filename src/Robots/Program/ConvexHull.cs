@@ -246,14 +246,20 @@ static class Gjk
 {
     const int MaxIterations = 64;
 
+    // How close the gap found for hulls further apart than the margin is to the real one, as a fraction of their distance.
+    const double GapTolerance = 0.1;
+
     /// <summary>
     /// True if the hulls, with their points in the coordinates of their planes,
-    /// come closer than the margin.
+    /// come closer than the margin. Otherwise the gap is how much further apart
+    /// than the margin they are at least, to within a tenth of their distance.
     /// </summary>
-    public static bool Within(ConvexHull a, in Plane frameA, ConvexHull b, in Plane frameB, double margin)
+    public static bool Within(ConvexHull a, in Plane frameA, ConvexHull b, in Plane frameB, double margin, out double gap)
     {
         double margin2 = margin * margin;
         var v = ToWorld(frameA, a.Center) - ToWorld(frameB, b.Center);
+        double lower = 0;
+        gap = 0;
 
         if (v.SquareLength < 1e-18)
             v = Vector3d.XAxis;
@@ -269,26 +275,37 @@ static class Gjk
             double vw = v * w;
 
             // The plane through w normal to v keeps the origin at least vw / |v| away.
-            if (vw > 0 && vw * vw > margin2 * vv)
-                return false;
+            if (vw > 0)
+                lower = Max(lower, vw / Sqrt(vv));
 
             // No progress, so v is the closest point.
-            if (vv - vw <= 1e-12 * Max(vv, 1))
+            bool closest = vv - vw <= 1e-12 * Max(vv, 1);
+
+            // Further than the margin decides the check, which goes on only to find the gap, until it is close to |v|, the most it can be.
+            if (lower > margin)
+            {
+                if (closest || lower >= (1 - GapTolerance) * Sqrt(vv))
+                    break;
+            }
+            else if (closest)
+            {
                 return vv < margin2;
+            }
 
             simplex[count++] = w;
             v = Closest(simplex, ref count);
 
             // The origin is inside the difference, so the hulls overlap.
             if (count == 4)
-                return true;
+                break;
 
             // The difference holds v, so the hulls are at most |v| apart.
-            if (v.SquareLength < margin2)
+            if (lower <= margin && v.SquareLength < margin2)
                 return true;
         }
 
-        return v.SquareLength < margin2;
+        gap = Max(lower - margin, 0);
+        return lower <= margin && (count == 4 || v.SquareLength < margin2);
     }
 
     static Point3d ToWorld(in Plane frame, Point3d point) =>

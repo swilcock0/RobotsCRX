@@ -67,7 +67,7 @@ class FixedRedundancyKinematics(RobotArm robot) : RobotKinematics(robot)
             && Abs(joints[6].D) > tolerance;
     }
 
-    protected override Transform[] ForwardKinematics(double[] joints) => ModifiedDH(joints);
+    protected override void ForwardKinematics(double[] joints, Span<Transform> transforms, int from) => ModifiedDH(joints, transforms, from);
 
     protected override bool TryGetConfiguration(
         double[] joints,

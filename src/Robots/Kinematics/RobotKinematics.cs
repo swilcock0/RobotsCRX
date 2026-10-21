@@ -212,11 +212,12 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         Span<double> error = stackalloc double[6];
         Span<double> jacobian = stackalloc double[36];
         Span<double> step = stackalloc double[6];
+        Span<Transform> chain = stackalloc Transform[6];
 
         for (int iteration = 0; ; iteration++)
         {
-            var end = ForwardKinematics(joints)[^1];
-            PoseDifference(target, end, error);
+            ForwardKinematics(joints, chain, 0);
+            PoseDifference(target, chain[^1], error);
 
             if (Hypot3(error[0], error[1], error[2]) < ContinuationPositionTolerance
                 && Hypot3(error[3], error[4], error[5]) < ContinuationAngleTolerance)
@@ -227,7 +228,7 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             if (iteration == ContinuationIterations)
                 return false;
 
-            PoseJacobian(joints, end, jacobian);
+            PoseJacobian(joints, chain, jacobian);
             error.CopyTo(step);
 
             if (!SolveLinear(jacobian, step))
@@ -244,7 +245,8 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         }
 
         // Near singularities the full inverse kinematics decides, and warns.
-        PoseJacobian(joints, ForwardKinematics(joints)[^1], jacobian);
+        ForwardKinematics(joints, chain, 0);
+        PoseJacobian(joints, chain, jacobian);
         double scale = 1 / _a.Concat(_d).Sum(Abs);
 
         for (int row = 0; row < 3; row++)
@@ -280,16 +282,22 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         difference[5] = (r10 - r01) * 0.5;
     }
 
-    void PoseJacobian(double[] joints, Transform end, Span<double> jacobian)
+    // By finite differences, each turning one joint, so only the transforms from it on change.
+    void PoseJacobian(double[] joints, ReadOnlySpan<Transform> chain, Span<double> jacobian)
     {
         Span<double> column = stackalloc double[6];
+        Span<Transform> perturbedChain = stackalloc Transform[chain.Length];
+        chain.CopyTo(perturbedChain);
+        var end = chain[^1];
         double[] perturbed = [.. joints];
 
         for (int j = 0; j < 6; j++)
         {
             perturbed[j] = joints[j] + JacobianStep;
-            PoseDifference(ForwardKinematics(perturbed)[^1], end, column);
+            ForwardKinematics(perturbed, perturbedChain, j);
+            PoseDifference(perturbedChain[^1], end, column);
             perturbed[j] = joints[j];
+            perturbedChain[j] = chain[j];
 
             for (int row = 0; row < 6; row++)
                 jacobian[row * 6 + j] = column[row] / JacobianStep;
@@ -363,7 +371,17 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         return false;
     }
 
-    protected virtual Transform[] ForwardKinematics(double[] joints) => DH(joints);
+    protected Transform[] ForwardKinematics(double[] joints)
+    {
+        var transforms = new Transform[joints.Length];
+        ForwardKinematics(joints, transforms, 0);
+        return transforms;
+    }
+
+    /// <summary>
+    /// The transforms of the joints from the index on, the ones before it being those of the same joints already.
+    /// </summary>
+    protected virtual void ForwardKinematics(double[] joints, Span<Transform> transforms, int from) => DH(joints, transforms, from);
 
     protected static bool HasRevoluteDh(
         Joint[] joints,

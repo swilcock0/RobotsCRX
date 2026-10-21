@@ -12,7 +12,8 @@ public sealed record CollisionOptions
     /// <summary>
     /// Fixed geometry to avoid, such as the pedestal, table and fixtures. Each
     /// separate piece of a mesh counts as its convex hull, so model a hollow or
-    /// L-shaped fixture as several pieces.
+    /// L-shaped fixture as several pieces. A piece the robot's base touches is its
+    /// mount, which the first link may touch too, as it only turns on it.
     /// </summary>
     public IReadOnlyList<Mesh> Environment { get; init; } = [];
 
@@ -61,6 +62,12 @@ public sealed record CollisionOptions
     /// place, shrunk by the clearance along the axes of their plane.
     /// </summary>
     internal IReadOnlyList<FixedPart> FixedParts { get; init; } = [];
+
+    /// <summary>
+    /// Stop at the first collision found, which may not be the first on the way,
+    /// for programs tried while planning that only need to know if they collide.
+    /// </summary>
+    internal bool Any { get; init; }
 }
 
 /// <summary>
@@ -90,7 +97,9 @@ public sealed record CellContact(int TargetIndex, string First, string Second, M
 /// <summary>
 /// Checks a single-robot cell with the convex hulls of its shapes: the tool, with
 /// any part it holds, against the robot's base and the links up to J4, and the
-/// links, tool and held part against the environment and the other parts.
+/// links, tool and held part against the environment and the other parts. The
+/// pieces of the environment the base touches are its mount, which the first
+/// link, turning on it about J1, may touch too.
 /// </summary>
 sealed class CollisionChecker
 {
@@ -130,16 +139,21 @@ sealed class CollisionChecker
 
     sealed record Obstacle(GrippedPart Part, StaticShape[] Waiting, StaticShape[] Placed);
 
+    // How far the points of each link, of the tool and held part, and of those relative to each link can move at most per unit of a joint move.
+    sealed record Rates(double[] Links, double Carried, double[] Relative);
+
     readonly Program _program;
     readonly RobotSystem _system;
     readonly CollisionOptions _options;
     readonly int _jointCount;
     readonly Plane[] _defaultPlanes;
     readonly double[] _reachBefore;
+    readonly double[] _linkExtents;
     readonly ConcurrentDictionary<(Tool Tool, GrippedPart? Held), double> _reaches = [];
     readonly Mesh[] _linkMeshes;
     readonly ConvexHull[][] _links;
     readonly StaticShape[] _environment;
+    readonly StaticShape[][] _linkEnvironment;
     readonly Obstacle[] _obstacles;
     readonly StaticShape[] _fixed;
 
@@ -159,18 +173,25 @@ sealed class CollisionChecker
         _jointCount = _system.GetRobotJointCount(0);
         _defaultPlanes = _system.DefaultPose.Planes[0];
 
-        // How far along the arm each joint is, so how much of the reach is beyond it.
-        _reachBefore = new double[_jointCount];
-
-        for (int i = 1; i < _jointCount; i++)
-            _reachBefore[i] = _reachBefore[i - 1] + _defaultPlanes[i].Origin.DistanceTo(_defaultPlanes[i - 1].Origin);
         _linkMeshes = _system.DefaultPose.CollisionMeshes[0];
 
-        // Link hulls in the coordinates of their default planes, so they move with the planes.
+        // How far along the arm the plane of each link is, so how much of the reach is beyond it.
+        _reachBefore = new double[_linkMeshes.Length];
+
+        for (int i = 1; i < _reachBefore.Length; i++)
+            _reachBefore[i] = _reachBefore[i - 1] + _defaultPlanes[i].Origin.DistanceTo(_defaultPlanes[i - 1].Origin);
+
+        // Link hulls in the coordinates of their default planes, so they move with the planes, and how far they reach from them.
         _links = [.. _linkMeshes.Select((mesh, i) => ConvexHull.Pieces(mesh).Select(hull => hull.InPlane(_defaultPlanes[i])).ToArray())];
+        _linkExtents = [.. _links.Select(pieces => pieces.Select(Extent).DefaultIfEmpty().Max())];
 
         _environment = [.. options.Environment.SelectMany((mesh, i) =>
             ConvexHull.Pieces(mesh).Select(hull => StaticShape.Create(hull, new(Kind.Environment, i))))];
+
+        // The environment each link is checked against, which for the first link leaves out the mount.
+        var basePlane = _system.Kinematics([new JointTarget(new double[_jointCount])])[0].Planes[0];
+        StaticShape[] clear = [.. _environment.Where(piece => !_links[0].Any(hull => Gjk.Within(hull, basePlane, piece.Shape.Hull, piece.Shape.Frame, options.Distance, out _)))];
+        _linkEnvironment = [.. _links.Select((_, i) => i == 1 ? clear : _environment)];
 
         _obstacles = options.Parts
             ? [.. program.GrippedParts.Select((part, i) => new Obstacle(
@@ -206,13 +227,13 @@ sealed class CollisionChecker
             {
                 var kinematics = target.ProgramTargets[0].Kinematics;
 
-                if (kinematics.Errors.Count == 0 && Find(kinematics, target, _options.Distance, out _) is { } contact)
+                if (kinematics.Errors.Count == 0 && Find(kinematics, target, _options.Distance, null, out _) is { } contact)
                     found[target.Index] = (0, contact);
             }
         }
         else
         {
-            _ = Parallel.For(0, segments.Count, position =>
+            _ = Parallel.For(0, segments.Count, (position, loop) =>
             {
                 var segment = segments[position];
                 var target = _program.Targets[segment.TargetIndex];
@@ -220,33 +241,39 @@ sealed class CollisionChecker
                 var prevJoints = segment.Start.JointSets();
                 var targets = new Target[segment.Start.ProgramTargets.Count];
 
-                // A joint move turns the joints evenly, so how far any point moves per unit of the move is known, and the next pose can be as far on as the
-                // robot is from everything, which is rigorous. Other moves, which can bend the joints on the way, are checked at even steps.
-                bool jointMove = segment.Corner is null && segment.End.ProgramTargets[0].IsJointMotion && travel > 0;
+                // A joint move turns the joints evenly, so how far each shape moves per unit of the move is known, and the next pose can be as far on as
+                // the shapes are from what they could hit, which is rigorous. Other moves, which can bend the joints on the way, are checked at even steps.
+                var rates = segment.Corner is null && segment.End.ProgramTargets[0].IsJointMotion && travel > 0
+                    ? MotionRates(segment.Start.ProgramTargets[0].Kinematics.Joints, segment.End.ProgramTargets[0].Kinematics.Joints, target)
+                    : null;
                 double step = 1.0 / divisions;
                 double fraction = position == 0 ? 0 : step;
                 RobotKinematics.PathSampling = true;
 
                 try
                 {
-                    while (true)
+                    while (!loop.IsStopped)
                     {
                         double time = segment.Start.TotalTime + ((segment.End.TotalTime - segment.Start.TotalTime) * fraction);
                         _ = segment.Lerp(_system, time, targets);
                         prevJoints = segment.PreviousSample(time).JointSets(prevJoints);
                         var kinematics = _system.Kinematics(targets, prevJoints);
-                        double clearance = 0;
+                        double advance = 0;
 
-                        if (kinematics[0].Errors.Count == 0 && Find(kinematics[0], target, _options.Distance, out clearance) is { } contact)
+                        if (kinematics[0].Errors.Count == 0 && Find(kinematics[0], target, _options.Distance, rates, out advance) is { } contact)
                         {
                             _ = found.AddOrUpdate(target.Index, (position, contact), (_, existing) => existing.Position <= position ? existing : (position, contact));
+
+                            if (_options.Any)
+                                loop.Stop();
+
                             break;
                         }
 
                         if (fraction >= 1)
                             break;
 
-                        fraction += jointMove ? Math.Max(step, clearance / travel) : step;
+                        fraction += Math.Max(step, advance);
 
                         if (fraction > 1 - 1e-9)
                             fraction = 1;
@@ -268,14 +295,19 @@ sealed class CollisionChecker
     public Interval[] Ranges => [.. _system.GetJoints(0).Select(joint => joint.Range)];
 
     /// <summary>
-    /// Whether the robot collides with these joints, carrying the tool and part as on
-    /// the way to the target, with shapes closer than the margin colliding.
+    /// How far the robot can move on from these joints, as a fraction of turning the joints evenly from one set to
+    /// the other, without shapes coming closer than the margin, carrying the tool and part as on the way to the
+    /// target, or -1 if they are closer with these joints already.
     /// </summary>
-    public bool Collides(double[] joints, SystemTarget target, double margin)
+    public double Clearance(double[] joints, double[] from, double[] to, SystemTarget target, double margin)
     {
         var programTarget = target.ProgramTargets[0];
         var kinematics = _system.Kinematics([new JointTarget(joints, programTarget.Target.Tool, frame: programTarget.Target.Frame)])[0];
-        return kinematics.Errors.Count > 0 || Find(kinematics, target, margin, out _) is not null;
+
+        if (kinematics.Errors.Count > 0 || Find(kinematics, target, margin, MotionRates(from, to, target), out double advance) is not null)
+            return -1;
+
+        return advance;
     }
 
     /// <summary>
@@ -324,6 +356,34 @@ sealed class CollisionChecker
         return travel;
     }
 
+    // How fast the shapes move turning the joints evenly from one target to the other: a link only by the joints before it, with no
+    // point further from their axes than the planes between them and the link's reach from its own, and the tool and part relative
+    // to a link only by the joints after it.
+    Rates MotionRates(double[] from, double[] to, SystemTarget target)
+    {
+        var joints = _system.GetJoints(0);
+        double reach = Reach(target);
+        var links = new double[_links.Length];
+        var relative = new double[_links.Length];
+        double carried = 0;
+
+        for (int j = 0; j < joints.Count; j++)
+        {
+            double change = Math.Abs(to[j] - from[j]);
+            bool prismatic = joints[j] is PrismaticJoint;
+            double lever = prismatic ? 1 : Math.Max(reach - _reachBefore[j], 0);
+            carried += change * lever;
+
+            for (int i = j + 1; i < links.Length; i++)
+                links[i] += change * (prismatic ? 1 : _reachBefore[i] - _reachBefore[j] + _linkExtents[i]);
+
+            for (int i = 0; i <= j && i < relative.Length; i++)
+                relative[i] += change * lever;
+        }
+
+        return new(links, carried, relative);
+    }
+
     double Reach(Tool tool, GrippedPart? held)
     {
         double reach = 0;
@@ -338,18 +398,19 @@ sealed class CollisionChecker
         var hulls = carried.SelectMany(ConvexHull.Pieces).Concat(held?.LocalHulls ?? []);
         extent = Math.Max(extent, hulls.Select(Extent).DefaultIfEmpty().Max() + opening);
         return reach + extent;
+    }
 
-        static double Extent(ConvexHull hull)
-        {
-            return ((Vector3d)hull.Center).Length + hull.Radius;
-        }
+    // How far a hull reaches from the origin of its coordinates.
+    static double Extent(ConvexHull hull)
+    {
+        return ((Vector3d)hull.Center).Length + hull.Radius;
     }
 
     /// <summary>
-    /// The first collision of the robot in a pose, and how far a point of the robot can move from it without
-    /// colliding, which is zero if the pose has shapes near each other that were not checked closer.
+    /// The first collision of the robot in a pose, and for a joint move with the given rates, at least how much
+    /// further, as a fraction of the move, the robot can go without colliding.
     /// </summary>
-    CellContact? Find(KinematicSolution kinematics, SystemTarget target, double margin, out double clearance)
+    CellContact? Find(KinematicSolution kinematics, SystemTarget target, double margin, Rates? rates, out double advance)
     {
         var programTarget = target.ProgramTargets[0];
         var gripper = programTarget.Gripper;
@@ -357,7 +418,7 @@ sealed class CollisionChecker
         var planes = kinematics.Planes;
         var flange = planes[^2];
         double nearest = double.PositiveInfinity;
-        clearance = 0;
+        advance = 0;
 
         List<Shape> links = new(_links.Sum(pieces => pieces.Length));
 
@@ -390,7 +451,7 @@ sealed class CollisionChecker
                 carried.Add(Shape.Create(hull, flange, new(Kind.Held, index)));
         }
 
-        // The wrist links carry the tool, so it is only checked against the links below them. Both move, so the gap between them closes twice as fast.
+        // The wrist links carry the tool, so it is only checked against the links below them, which it moves relative to only by the joints after them.
         foreach (var a in carried)
         {
             foreach (var b in links)
@@ -402,23 +463,23 @@ sealed class CollisionChecker
 
                 if (gap > 0)
                 {
-                    nearest = Math.Min(nearest, gap / 2);
+                    Near(gap, rates?.Relative[b.Label.Index]);
                     continue;
                 }
 
-                nearest = 0;
-
-                if (Gjk.Within(a.Hull, a.Frame, b.Hull, b.Frame, margin))
+                if (Gjk.Within(a.Hull, a.Frame, b.Hull, b.Frame, margin, out double apart))
                     return Contact(a, b);
+
+                Near(apart, rates?.Relative[b.Label.Index]);
             }
         }
 
         int events = gripper.Events;
 
-        // The base sits on its mount, so the links above it and the tool are checked against the cell.
+        // The base sits on its mount, so the links above it and the tool are checked against the cell, the first link only against what is not the mount.
         foreach (var a in links.Where(link => link.Label.Index > 0).Concat(carried))
         {
-            foreach (var b in _environment)
+            foreach (var b in a.Label.Kind == Kind.Link ? _linkEnvironment[a.Label.Index] : _environment)
             {
                 if (Collide(a, b))
                     return Contact(a, b.Shape);
@@ -444,24 +505,47 @@ sealed class CollisionChecker
             }
         }
 
-        clearance = nearest;
+        if (rates is not null)
+            advance = nearest;
         return null;
 
-        // Whether a robot shape collides with one that stays, using the box around it first, and noting how far apart they are if they cannot.
+        // Notes how far on the move the shapes stay apart, with the gap between them closing at most at the rate.
+        void Near(double gap, double? rate)
+        {
+            if (rate is { } closing)
+                nearest = gap > 0 ? Math.Min(nearest, gap / closing) : 0;
+        }
+
+        double? Rate(in Shape shape)
+        {
+            return shape.Label.Kind == Kind.Link ? rates?.Links[shape.Label.Index] : rates?.Carried;
+        }
+
+        // Whether a robot shape collides with one that stays, using the box and sphere around it first, and noting how far apart they are if they do not.
         bool Collide(in Shape a, in StaticShape b)
         {
             double gap = b.Gap(a) - margin;
 
             if (gap > 0)
             {
-                nearest = Math.Min(nearest, gap);
+                Near(gap, Rate(a));
                 return false;
             }
 
-            nearest = 0;
             double reach = a.Radius + b.Shape.Radius + margin;
-            return a.Center.DistanceToSquared(b.Shape.Center) < reach * reach
-                && Gjk.Within(a.Hull, a.Frame, b.Shape.Hull, b.Shape.Frame, margin);
+            double distance2 = a.Center.DistanceToSquared(b.Shape.Center);
+
+            if (distance2 >= reach * reach)
+            {
+                Near(Math.Sqrt(distance2) - reach, Rate(a));
+                return false;
+            }
+
+            if (Gjk.Within(a.Hull, a.Frame, b.Shape.Hull, b.Shape.Frame, margin, out double apart))
+                return true;
+
+            Near(apart, Rate(a));
+            return false;
         }
 
         CellContact Contact(Shape a, Shape b)

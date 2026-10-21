@@ -12,7 +12,7 @@ public class CellCollisions() : Component(
     protected override void RegisterInputParams(GH_InputParamManager pManager)
     {
         _ = pManager.AddParameter(new ProgramParameter(), "Program", "P", "Robot program to check.", GH_ParamAccess.item);
-        _ = pManager.AddMeshParameter("Environment", "E", "Optional fixed geometry to avoid, such as the pedestal, table and fixtures. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces.", GH_ParamAccess.list);
+        _ = pManager.AddMeshParameter("Environment", "E", "Optional fixed geometry to avoid, such as the pedestal, table and fixtures. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces. A piece the robot's base touches is its mount, which the first link may touch too.", GH_ParamAccess.list);
         _ = pManager.AddBooleanParameter("Part Obstacles", "Po", "Avoid the parts picked up by Set Gripper while they wait to be picked and after they are placed.", GH_ParamAccess.item, true);
         _ = pManager.AddNumberParameter("Clearance", "Cl", "Millimeters the part obstacles are shrunk by, so parts resting on each other are not reported. Collisions closer than 1 mm count.", GH_ParamAccess.item, 2);
         _ = pManager.AddNumberParameter("Linear Step Size", "Ls", "Linear step size in mm used to check for collisions.", GH_ParamAccess.item, 10);

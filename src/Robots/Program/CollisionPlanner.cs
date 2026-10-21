@@ -19,6 +19,12 @@ namespace Robots;
 /// </summary>
 static class CollisionPlanner
 {
+    /// <summary>
+    /// The planned targets, and the notes on what was changed, by target index, which the
+    /// program warns of if the targets made at its step size have no errors besides collisions.
+    /// </summary>
+    public sealed record Planned(List<Target> Targets, List<(int Index, string Message)> Notes);
+
     const double LiftStep = 100;
     const double TrialStepSize = 5;
 
@@ -34,7 +40,7 @@ static class CollisionPlanner
 
     sealed record Option(Target[] Targets, Program Program, double PickRotation, double PlaceRotation, double Lift, RobotConfigurations? PickArm, RobotConfigurations? PlaceArm, int Waypoints = 0);
 
-    public static List<Target> Plan(Program program, IReadOnlyList<Target> targets, Group? initCommands, double stepSize, CollisionOptions options)
+    public static Planned Plan(Program program, IReadOnlyList<Target> targets, Group? initCommands, double stepSize, CollisionOptions options)
     {
         var runs = Runs(targets);
         var initial = initCommands;
@@ -57,7 +63,7 @@ static class CollisionPlanner
         var baseline = new Program("Plan", program.RobotSystem, [new SimpleToolpath(targets)], initial, null, trialStepSize, options with { Avoid = false }, false);
 
         if (baseline.Errors.Count == 0)
-            return [.. targets];
+            return new([.. targets], []);
 
         // Its results hold for a pick and place as long as the targets before it end as they did, which they do while nothing before it is changed.
         bool baselineHolds = baseline.Errors.Count == baseline.Collisions.Count && baseline.Targets.Count == targets.Count;
@@ -319,7 +325,7 @@ static class CollisionPlanner
                 {
                     var (pickRotation, placeRotation, lift, pickArm, placeArm) = missing[i];
                     var created = job.Targets(pickRotation, placeRotation, lift, pickArm, placeArm);
-                    made[i] = new(created, Trial(created, gap, others), pickRotation, placeRotation, lift, pickArm, placeArm);
+                    made[i] = new(created, Trial(created, gap, others, lift > 0), pickRotation, placeRotation, lift, pickArm, placeArm);
                 });
 
                 for (int i = 0; i < missing.Length; i++)
@@ -385,7 +391,7 @@ static class CollisionPlanner
         // Pick and places one after another have each been checked from where the one before ended, so there is nothing else to check or route.
         bool contiguous = runs.Count > 0 && runs.Zip(runs.Skip(1), (a, b) => a.Start + a.Count == b.Start).All(joined => joined) && runs[^1].Start + runs[^1].Count == targets.Count;
 
-        return planned && contiguous && !unresolved ? Verified(result) : RouteOthers(result);
+        return new(planned && contiguous && !unresolved ? result : RouteOthers(result), notes);
 
         // The rest of the program: its colliding joint moves routed around the obstacles, then the arm turned to another configuration where that clears the rest.
         List<Target> RouteOthers(List<Target> list)
@@ -414,7 +420,7 @@ static class CollisionPlanner
                     list = third.Targets;
             }
 
-            return Verified(list);
+            return list;
 
             Routed? RouteAll(Program current, List<Target> all)
             {
@@ -450,38 +456,6 @@ static class CollisionPlanner
         static double Distance(double[] a, double[] b)
         {
             return Math.Sqrt(a.Zip(b, (x, y) => (x - y) * (x - y)).Sum());
-        }
-
-        // The planned targets if the program made from them at the real step size has no errors besides collisions where the given targets have none,
-        // as the trials use a coarser step, and otherwise the given targets, so planning never makes a program that could be made as given worse.
-        List<Target> Verified(List<Target> list)
-        {
-            if (notes.Count == 0)
-                return list;
-
-            var planned = Make(list);
-
-            if (planned.Errors.Count > 0)
-            {
-                var original = Make(targets);
-
-                if (original.Errors.Count == 0)
-                {
-                    program.AddWarning($"Collision avoidance changed the targets in a way that left errors ({planned.Errors[0]}), so they were kept as given.", 0);
-                    return [.. targets];
-                }
-            }
-
-            foreach (var (index, message) in notes)
-                program.AddWarning(message, index);
-
-            return list;
-
-            // Without collision checks, as only other errors matter.
-            Program Make(IReadOnlyList<Target> all)
-            {
-                return new("Plan", program.RobotSystem, [new SimpleToolpath(all)], initial, null, stepSize, null, false);
-            }
         }
 
         // Moves the notes after the targets inserted before them.
@@ -587,9 +561,10 @@ static class CollisionPlanner
             return ([new JointTarget(end.Kinematics.Joints, end.Target.Tool, frame: end.Target.Frame)], new([new SetGripper(end.GripperAtTarget.Opening)]));
         }
 
-        Program Trial(IEnumerable<Target> created, Target[] gap, List<FixedPart> others)
+        // Only whether a lifted option collides matters, not where, so its check stops at the first collision.
+        Program Trial(IEnumerable<Target> created, Target[] gap, List<FixedPart> others, bool lifted)
         {
-            return new("Plan", program.RobotSystem, [new SimpleToolpath([.. start, .. gap, .. created])], initCommands, null, trialStepSize, options with { Avoid = false, FixedParts = others }, false);
+            return new("Plan", program.RobotSystem, [new SimpleToolpath([.. start, .. gap, .. created])], initCommands, null, trialStepSize, options with { Avoid = false, FixedParts = others, Any = lifted }, false);
         }
 
         // The option with its colliding joint motions routed around the obstacles, if that clears it.
@@ -640,7 +615,7 @@ static class CollisionPlanner
 
                 var from = trial.Targets[index - 1].ProgramTargets[0].Kinematics.Joints;
                 double resolution = 2 * options.LinearStep / checker.Reach(to);
-                JointRouter router = new(joints => !checker.Collides(joints, to, margin), ranges, resolution, seed + 1);
+                JointRouter router = new((joints, origin, destination) => checker.Clearance(joints, origin, destination, to, margin), ranges, resolution, seed + 1);
 
                 var path = router.Find(from, goal.Joints, routes);
                 var configuration = goal.Configuration;

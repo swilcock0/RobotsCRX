@@ -14,7 +14,7 @@ public class CreateProgramVariable() : Component(
     , IGH_VariableParameterComponent
 {
     const string CollisionsDescription = "Avoid collisions in a single-robot cell: the tool and any part it holds against the robot's arm, and the arm, tool and held part against the environment and the parts picked up by Set Gripper. The targets of each Pick and Place are made again turned 180 degrees or moving higher between the pick and place if that clears them, and colliding joint moves, in a Pick and Place or not, are routed around obstacles through joint waypoints or made with the arm in another configuration, with a warning. Other targets are kept, and remaining collisions, such as in linear moves, are errors.";
-    const string EnvironmentDescription = "Optional fixed geometry to avoid when checking collisions, such as the pedestal and table. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces.";
+    const string EnvironmentDescription = "Optional fixed geometry to avoid when checking collisions, such as the pedestal and table. Each separate piece counts as its convex hull, so model hollow or L-shaped fixtures as several pieces. A piece the robot's base touches is its mount, which the first link may touch too.";
 
     RobotSystem? _robotSystem;
 

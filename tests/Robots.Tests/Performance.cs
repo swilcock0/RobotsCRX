@@ -39,6 +39,42 @@ class Performance
         Assert.That(program.Errors, Is.Empty);
     }
 
+    [Test]
+    [Explicit("Reports collision avoidance timings for pick and place cells, with a hash of each program to compare changes by.")]
+    public void CollisionPlanning()
+    {
+        (string Label, int Parts, Func<CollisionCheckerTests.Cell, CollisionOptions> Options)[] cases =
+        [
+            ("clear", 10, cell => cell.Options),
+            ("400 mm wall", 4, cell => cell.Options with { Environment = [.. cell.Options.Environment, CollisionCheckerTests.Post(400)] }),
+            ("400 mm wall", 10, cell => cell.Options with { Environment = [.. cell.Options.Environment, CollisionCheckerTests.Post(400)] }),
+            ("2000 mm post", 3, cell => cell.Options with { Environment = [.. cell.Options.Environment, CollisionCheckerTests.Post(2000)] }),
+            ("block over stack", 3, cell => cell.Options with { Environment = [.. cell.Options.Environment, CollisionCheckerTests.Box(new(700, 1000), new(-450, -150), new(150, 400))] }),
+        ];
+
+        // Compiled before timing.
+        _ = CollisionCheckerTests.Cell.Create(parts: 1).Program(CollisionCheckerTests.Cell.Create(parts: 1).Options);
+
+        foreach (var (label, parts, options) in cases)
+        {
+            var cell = CollisionCheckerTests.Cell.Create(parts);
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            var cpu = process.TotalProcessorTime;
+            var watch = Stopwatch.StartNew();
+            var program = cell.Program(options(cell));
+            watch.Stop();
+            process.Refresh();
+            cpu = process.TotalProcessorTime - cpu;
+
+            string code = string.Join("\n", program.Code?.SelectMany(files => files.SelectMany(lines => lines)) ?? program.Errors);
+            string hash = Hash(code);
+            string warnings = Hash(string.Join("\n", program.Warnings));
+            TestContext.Out.WriteLine($"{label}, {parts} parts: {watch.Elapsed.TotalMilliseconds:0} ms ({cpu.TotalMilliseconds:0} ms CPU), {program.Targets.Count} targets, {program.Errors.Count} errors, {program.Warnings.Count} warnings ({warnings}), {hash}");
+        }
+    }
+
+    static string Hash(string text) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..12];
+
     static Program AbbProgram(RobotSystem robot)
     {
         var planeA = Plane.WorldYZ;

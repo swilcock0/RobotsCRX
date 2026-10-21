@@ -105,35 +105,37 @@ public class Program : IProgram
         Warnings = _warnings.AsReadOnly();
         Errors = _errors.AsReadOnly();
         CheckName(name, robotSystem);
+        int named = _errors.Count;
+        int warned = _warnings.Count;
 
         if (collisions is { Avoid: true } && toolpaths is [var toolpath] && robotSystem.RobotCount == 1)
-            toolpaths = [new SimpleToolpath(CollisionPlanner.Plan(this, toolpath.Targets, initCommands, stepSize, collisions))];
-
-        var targets = CreateSystemTargets(toolpaths);
-
-        if (targets.Count > 0)
         {
-            new ProgramPreflight(this).Run(targets);
-        }
+            var given = toolpath.Targets;
+            var plan = CollisionPlanner.Plan(this, given, initCommands, stepSize, collisions);
+            toolpaths = [new SimpleToolpath(plan.Targets)];
 
-        if (targets.Count > 0 && Errors.Count == 0)
-        {
-            ProgramMotionPlanner motionPlanner = new(this, targets, stepSize);
+            foreach (var (index, message) in plan.Notes)
+                AddWarning(message, index);
 
-            if (motionPlanner.Keyframes.Count > 0)
+            (_targets, _simulation) = Create(toolpaths, stepSize);
+
+            // The trials were made at a coarser step, so if the planned targets have errors besides collisions where the targets as given have
+            // none, the program is made as given instead, so planning never makes worse a program that could be made as given.
+            if (plan.Notes.Count > 0 && _errors.Count > named
+                && new Program("Plan", robotSystem, [new SimpleToolpath(given)], initCommands, null, stepSize, null, false).Errors.Count == 0)
             {
-                _motionSegments.AddRange(motionPlanner.Segments);
-                _simulation = new(this, motionPlanner.Keyframes[0], _motionSegments);
+                string error = _errors[named];
+                Restart(named, warned, initCommands);
+                AddWarning($"Collision avoidance changed the targets in a way that left errors ({error}), so they were kept as given.", 0);
+                toolpaths = [new SimpleToolpath([.. given])];
+                (_targets, _simulation) = Create(toolpaths, stepSize);
             }
-
-            targets = motionPlanner.FixedTargets;
         }
-        else if (targets.Count > 0 && Errors.Count > 0)
+        else
         {
-            targets = targets.GetRange(0, 1);
+            (_targets, _simulation) = Create(toolpaths, stepSize);
         }
 
-        _targets = [.. targets];
         Targets = Array.AsReadOnly(_targets);
 
         if (collisions is not null && Errors.Count == 0 && HasSimulation)
@@ -148,6 +150,54 @@ public class Program : IProgram
             if (Errors.Count == 0)
                 Code = code;
         }
+    }
+
+    // The targets, planned with their motions if they have no errors, and their simulation.
+    (SystemTarget[] Targets, Simulation? Simulation) Create(IReadOnlyList<IToolpath> toolpaths, double stepSize)
+    {
+        var targets = CreateSystemTargets(toolpaths);
+        Simulation? simulation = null;
+
+        if (targets.Count > 0)
+        {
+            new ProgramPreflight(this).Run(targets);
+        }
+
+        if (targets.Count > 0 && Errors.Count == 0)
+        {
+            ProgramMotionPlanner motionPlanner = new(this, targets, stepSize);
+
+            if (motionPlanner.Keyframes.Count > 0)
+            {
+                _motionSegments.AddRange(motionPlanner.Segments);
+                simulation = new(this, motionPlanner.Keyframes[0], _motionSegments);
+            }
+
+            targets = motionPlanner.FixedTargets;
+        }
+        else if (targets.Count > 0 && Errors.Count > 0)
+        {
+            targets = targets.GetRange(0, 1);
+        }
+
+        return ([.. targets], simulation);
+    }
+
+    // Undoes making the targets, keeping the messages from before.
+    void Restart(int errors, int warnings, Commands.Group? initCommands)
+    {
+        _errors.RemoveRange(errors, _errors.Count - errors);
+        _warnings.RemoveRange(warnings, _warnings.Count - warnings);
+        _uniqueErrors.Clear();
+        _uniqueErrors.UnionWith(_errors);
+        _uniqueWarnings.Clear();
+        _uniqueWarnings.UnionWith(_warnings);
+        _attributes.Clear();
+        _initCommands.Clear();
+        _initCommands.AddRange(initCommands?.Flatten() ?? []);
+        _grippedParts = [];
+        _motionSegments.Clear();
+        Duration = 0;
     }
 
     internal void AddError(string message, int? targetIndex = null, int? robotGroup = null) =>

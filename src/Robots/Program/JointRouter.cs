@@ -8,11 +8,12 @@ namespace Robots;
 /// found before are tried first, joined to the new start and goal, as later moves in
 /// a cell usually go around the same obstacles.
 /// </summary>
-/// <param name="isFree">Whether the robot is clear of collisions with these joints.</param>
+/// <param name="clearance">How far the robot can move on from the first joints, as a fraction of the straight joint motion from the second to the
+/// third, without colliding, or a negative number if it collides with the first joints.</param>
 /// <param name="ranges">The joints' ranges, in radians.</param>
 /// <param name="resolution">The largest sum of joint changes, in radians, between the poses checked along a straight joint motion.</param>
 /// <param name="seed">Seed of the random samples, so the same cell gets the same path.</param>
-sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double resolution, int seed)
+sealed class JointRouter(Func<double[], double[], double[], double> clearance, Interval[] ranges, double resolution, int seed)
 {
     const double Step = 0.3;
     const int MaxIterations = 1500;
@@ -31,7 +32,7 @@ sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double 
         if (IsFree(start, goal))
             return [start, goal];
 
-        if (!isFree(start) || !isFree(goal))
+        if (!IsFree(start) || !IsFree(goal))
             return null;
 
         var path = Reuse(start, goal, routes) ?? Connect(start, goal);
@@ -49,7 +50,7 @@ sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double 
             {
                 for (int i = 0; i < route.Count; i++)
                 {
-                    if (!isFree(route[i]) || !IsFree(start, route[i]))
+                    if (!IsFree(route[i]) || !IsFree(start, route[i]))
                         continue;
 
                     for (int j = route.Count - 1; j >= i; j--)
@@ -128,7 +129,7 @@ sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double 
         var from = tree[nearest].Joints;
         var to = best <= Step ? target : Lerp(from, target, Step / best);
 
-        if (!isFree(to) || !IsFree(from, to))
+        if (!IsFree(to) || !IsFree(from, to))
             return null;
 
         tree.Add(new(to, nearest));
@@ -181,8 +182,14 @@ sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double 
         return result;
     }
 
+    bool IsFree(double[] joints)
+    {
+        return clearance(joints, joints, joints) >= 0;
+    }
+
     /// <summary>
-    /// Whether a straight joint motion is clear, checking the middle first.
+    /// Whether a straight joint motion is clear at the poses between its ends at the resolution. Each pose checked
+    /// shows how far on the robot stays clear, so the poses before there are clear without being checked.
     /// </summary>
     bool IsFree(double[] from, double[] to)
     {
@@ -192,18 +199,17 @@ sealed class JointRouter(Func<double[], bool> isFree, Interval[] ranges, double 
             sum += Math.Abs(to[i] - from[i]);
 
         int divisions = (int)Math.Ceiling(sum / resolution);
-        int span = 1;
 
-        while (span < divisions)
-            span *= 2;
-
-        for (int s = span / 2; s >= 1; s /= 2)
+        for (int i = 1; i < divisions;)
         {
-            for (int i = s; i < divisions; i += 2 * s)
-            {
-                if (!isFree(Lerp(from, to, (double)i / divisions)))
-                    return false;
-            }
+            double t = (double)i / divisions;
+            double advance = clearance(Lerp(from, to, t), from, to);
+
+            if (advance < 0)
+                return false;
+
+            double next = Math.Ceiling((t + advance) * divisions);
+            i = next >= divisions ? divisions : Math.Max(i + 1, (int)next);
         }
 
         return true;

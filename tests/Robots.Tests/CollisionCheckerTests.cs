@@ -26,8 +26,12 @@ public class CollisionCheckerTests
             var frameB = frame;
             frameB.Origin += frame.XAxis * (100 + gap);
 
-            bool within = Gjk.Within(box, frame, box, frameB, margin);
+            bool within = Gjk.Within(box, frame, box, frameB, margin, out double found);
             Assert.That(within, Is.EqualTo(gap < margin), $"Gap {gap}.");
+
+            // The gap past the margin is never more than the real one, and close to it.
+            if (!within)
+                Assert.That(found, Is.InRange(Max((0.9 * gap) - margin, 0) - 1e-9, gap - margin + 1e-9), $"Gap {gap}.");
         }
     }
 
@@ -44,7 +48,7 @@ public class CollisionCheckerTests
             var frame = Plane.WorldXY;
             frame.Origin = (Point3d)(RandomDirection(random) * distance);
 
-            bool within = Gjk.Within(sphere, Plane.WorldXY, point, frame, 3);
+            bool within = Gjk.Within(sphere, Plane.WorldXY, point, frame, 3, out _);
 
             // The hull of the points is just inside the sphere.
             if (distance < 102.5)
@@ -77,6 +81,23 @@ public class CollisionCheckerTests
         TestContext.Out.WriteLine($"Checked in {watch.ElapsedMilliseconds} ms.");
 
         Assert.That(contacts, Is.Empty, string.Join(" ", contacts.Select(c => $"{c.TargetIndex}: {c}")));
+    }
+
+    [Test]
+    public void FirstLinkMayTouchTheMount()
+    {
+        var cell = Cell.Create(parts: 3);
+        var program = cell.Program();
+
+        // A pedestal up past the base into the first link, which turns on it, and one up to the second link, which can swing into it.
+        var low = program.CheckCellCollisions(cell.Options with { Environment = [Box(new(-130, 130), new(-130, 130), new(0, 568)), cell.Options.Environment[1]] });
+        var high = program.CheckCellCollisions(cell.Options with { Environment = [Box(new(-130, 130), new(-130, 130), new(0, 700)), cell.Options.Environment[1]] });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(low, Is.Empty, string.Join(" ", low.Select(c => $"{c.TargetIndex}: {c}")));
+            Assert.That(high.Select(contact => contact.First), Has.Some.EqualTo("robot link 2"));
+        });
     }
 
     [Test]
@@ -295,12 +316,18 @@ public class CollisionCheckerTests
         double[] start = [-1, 0, 0, 0, 0, 0];
         double[] goal = [1, 0, 0, 0, 0, 0];
 
-        JointRouter router = new(IsFree, ranges, 0.01, 1);
-        var path = router.Find(start, goal, []);
+        int checks = 0;
+        var path = new JointRouter(Clearance, ranges, 0.01, 1).Find(start, goal, []);
+        int clearanceChecks = checks;
+
+        checks = 0;
+        var stepped = new JointRouter((joints, _, _) => Clearance(joints, joints, joints) >= 0 ? 0 : -1, ranges, 0.01, 1).Find(start, goal, []);
 
         Assert.That(path, Is.Not.Null);
         Assert.Multiple(() =>
         {
+            Assert.That(path, Is.EqualTo(stepped), "Skipping the poses the clearance shows are clear finds the same path.");
+            Assert.That(clearanceChecks, Is.LessThan(checks / 2), "Skipping the poses the clearance shows are clear checks fewer.");
             Assert.That(path![0], Is.EqualTo(start));
             Assert.That(path[^1], Is.EqualTo(goal));
             Assert.That(path, Has.Count.InRange(3, 5), "Shortened to a few waypoints.");
@@ -315,6 +342,19 @@ public class CollisionCheckerTests
             }
         });
 
+        // How far on the motion the joints stay clear, as the first changes by at most its change in the motion, and the second too.
+        double Clearance(double[] joints, double[] from, double[] to)
+        {
+            checks++;
+
+            if (!IsFree(joints))
+                return -1;
+
+            double around = Abs(joints[0]) - 0.3;
+            double over = joints[1] - 1;
+            return Max(around > 0 ? around / Abs(to[0] - from[0]) : 0, over > 0 ? over / Abs(to[1] - from[1]) : 0);
+        }
+
         // A wall across the first joint, which the second joint has to lift over.
         static bool IsFree(double[] joints)
         {
@@ -328,24 +368,24 @@ public class CollisionCheckerTests
         Interval[] ranges = [.. Enumerable.Repeat(new Interval(-PI, PI), 6)];
         int checks = 0;
 
-        bool IsFree(double[] joints)
+        double Clearance(double[] joints, double[] from, double[] to)
         {
             checks++;
-            return Abs(joints[0]) > 0.3 || joints[1] > 1;
+            return Abs(joints[0]) > 0.3 || joints[1] > 1 ? 0 : -1;
         }
 
-        var first = new JointRouter(IsFree, ranges, 0.01, 1).Find([-1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0], [])!;
+        var first = new JointRouter(Clearance, ranges, 0.01, 1).Find([-1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0], [])!;
 
         // Back again from a little further along.
         double[] start = [1.2, 0.1, 0, 0, 0, 0];
         double[] goal = [-1.1, -0.1, 0, 0, 0, 0];
 
         checks = 0;
-        var fresh = new JointRouter(IsFree, ranges, 0.01, 2).Find(start, goal, []);
+        var fresh = new JointRouter(Clearance, ranges, 0.01, 2).Find(start, goal, []);
         int freshChecks = checks;
 
         checks = 0;
-        var reused = new JointRouter(IsFree, ranges, 0.01, 2).Find(start, goal, [first]);
+        var reused = new JointRouter(Clearance, ranges, 0.01, 2).Find(start, goal, [first]);
 
         Assert.Multiple(() =>
         {
@@ -371,7 +411,7 @@ public class CollisionCheckerTests
         });
     }
 
-    sealed record Cell(RobotSystem System, Target Start, CartesianTarget Template, Plane[] Picks, Plane[] Places, Mesh[] Parts, CollisionOptions Options)
+    internal sealed record Cell(RobotSystem System, Target Start, CartesianTarget Template, Plane[] Picks, Plane[] Places, Mesh[] Parts, CollisionOptions Options)
     {
         // A CRX-10iA/L raised 713 mm on a pedestal over a table, with a WSG 50 picking struts from a row and stacking them.
         public static Cell Create(int parts = 10)
@@ -421,9 +461,9 @@ public class CollisionCheckerTests
     }
 
     // A post between the pick and place.
-    static Mesh Post(double height) => Box(new(-150, 150), new(-1000, -850), new(0, height));
+    internal static Mesh Post(double height) => Box(new(-150, 150), new(-1000, -850), new(0, height));
 
-    static Mesh Box(Interval x, Interval y, Interval z) => Box(Plane.WorldXY, x, y, z);
+    internal static Mesh Box(Interval x, Interval y, Interval z) => Box(Plane.WorldXY, x, y, z);
 
     static Mesh Box(Plane plane, Interval x, Interval y, Interval z)
     {
