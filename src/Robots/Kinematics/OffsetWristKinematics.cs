@@ -138,7 +138,7 @@ class OffsetWristKinematics(RobotArm robot) : ConfigurationKinematics(robot)
         }
 
         if (isUnreachable)
-            (errorList ??= []).Add("Target out of reach.");
+            (errorList ??= []).Add(OutOfReachError);
 
         for (int i = 0; i < 6; i++)
         {

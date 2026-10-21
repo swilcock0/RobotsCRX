@@ -290,7 +290,7 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
 
         if (targetDistance > _maxReach + DistanceTol)
         {
-            errors.Add("Target out of reach.");
+            errors.Add(OutOfReachError);
             return [];
         }
 
@@ -365,7 +365,7 @@ class NonSphericalWristKinematics(RobotArm robot) : RobotKinematics(robot)
             BackSubstitute(scaledA, scaledD, in wrist, transform, joint6, previous, principal, requested);
 
         if (principal.Count == 0)
-            errors.Add("Target out of reach.");
+            errors.Add(OutOfReachError);
 
         return principal;
     }

@@ -1,4 +1,8 @@
-﻿- version: 0.4.1
+﻿- version: 0.4.2
+  changes:
+  - Fixed "Target out of reach" on joint motions that some arm configuration can reach, with the solver choosing the configuration itself. An unreachable configuration has placeholder joints, such as zeros, and could be picked as the closest to the previous joints when the robot started from zeros. Joint motions now only pick one of those if no configuration reaches the target. Linear motions keep their configuration and still report a singularity rather than change it.
+
+- version: 0.4.1
   changes:
   - Removed the obsolete components from Robots 1 (Create Program, Create Speed, Create Target, Custom Command and Deconstruct Target) and their upgrade commands. Files that still use them show missing components; replace them with the current ones.
 

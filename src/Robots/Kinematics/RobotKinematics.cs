@@ -93,12 +93,14 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             prevJoints,
             requested);
 
+        // A joint motion may reach the target in any configuration, but a linear one has to stay in its own, and report it if it cannot.
         int selected = SelectSolution(
             inverse.Solutions,
             requested,
             prevJoints,
             inverse.PreserveWindings,
-            out bool unavailable);
+            out bool unavailable,
+            skipUnreachable: cartesianTarget.Motion == Motions.Joint);
 
         double[] robotJoints;
 
@@ -388,6 +390,10 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         return true;
     }
 
+    protected const string OutOfReachError = "Target out of reach.";
+
+    static bool IsUnreachable(InverseSolution solution) => solution.Errors.Contains(OutOfReachError);
+
     static double SquaredDifference(double a, double b)
     {
         double difference = IEEERemainder(a - b, PI2);
@@ -399,7 +405,8 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
         RobotConfigurations? requested,
         PreviousJoints prevJoints,
         bool preserveWindings,
-        out bool unavailable)
+        out bool unavailable,
+        bool skipUnreachable = false)
     {
         unavailable = false;
 
@@ -422,6 +429,15 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             unavailable = !filter;
         }
 
+        // An unreachable solution has placeholder joints, such as zeros, which can be the closest, so it only counts if none of the others can be reached.
+        if (skipUnreachable)
+        {
+            skipUnreachable = false;
+
+            for (int i = 0; i < solutions.Count && !skipUnreachable; i++)
+                skipUnreachable = (!filter || solutions[i].Configuration == requested) && !IsUnreachable(solutions[i]);
+        }
+
         if (prevJoints.HasValue)
         {
             int closest = -1;
@@ -432,6 +448,9 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
                 var candidate = solutions[i];
 
                 if (filter && candidate.Configuration != requested)
+                    continue;
+
+                if (skipUnreachable && IsUnreachable(candidate))
                     continue;
 
                 double currentDifference = SquaredDifference(prevJoints, candidate.Joints, preserveWindings);
@@ -453,6 +472,9 @@ abstract class RobotKinematics(RobotArm robot) : MechanismKinematics(robot)
             var candidate = solutions[i];
 
             if (filter && candidate.Configuration != requested)
+                continue;
+
+            if (skipUnreachable && IsUnreachable(candidate))
                 continue;
 
             if (first < 0)

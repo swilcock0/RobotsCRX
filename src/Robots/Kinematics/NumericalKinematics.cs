@@ -121,7 +121,7 @@ class NumericalKinematics(RobotArm robot, bool useModifiedDH, int? redundant) : 
                 joints[j] += j == _redundant ? 0 : deltas[j];
         }
 
-        errors.Add("Target out of reach.");
+        errors.Add(OutOfReachError);
         return joints;
     }
 

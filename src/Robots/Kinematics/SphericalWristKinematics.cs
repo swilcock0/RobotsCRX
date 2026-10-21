@@ -10,8 +10,8 @@ class SphericalWristKinematics(RobotArm robot) : ConfigurationKinematics(robot)
     const double SupportDistanceRelativeTolerance = 1e-12;
 
     static readonly string[] NearSingularityErrors = ["Target near singularity."];
-    static readonly string[] UnreachableErrors = ["Target out of reach."];
-    static readonly string[] UnreachableNearSingularityErrors = ["Target out of reach.", "Target near singularity."];
+    static readonly string[] UnreachableErrors = [OutOfReachError];
+    static readonly string[] UnreachableNearSingularityErrors = [OutOfReachError, "Target near singularity."];
 
     readonly double[] _start = [0, HalfPI, HalfPI, 0, 0, PI];
     readonly double[] _signs = [1, -1, -1, 1, -1, 1];

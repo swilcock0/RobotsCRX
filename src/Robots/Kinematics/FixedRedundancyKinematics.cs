@@ -174,7 +174,7 @@ class FixedRedundancyKinematics(RobotArm robot) : RobotKinematics(robot)
         {
             errors.Add(hasClosingSolution
                 ? "Target requires joints outside the permitted ranges."
-                : "Target out of reach.");
+                : OutOfReachError);
         }
 
         return solutions;
