@@ -58,27 +58,28 @@ public class FileIOTests
         }
     }
 
-    [Test]
-    public void BundledGripperLoadsWithJaws()
+    [TestCase("WSG50", 122)]
+    [TestCase("WSG50_Sila", 117)]
+    public void BundledGripperLoadsWithJaws(string name, double tcpZ)
     {
         var root = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
 
         while (!File.Exists(Path.Combine(root.FullName, "Robots.slnx")))
             root = root.Parent ?? throw new DirectoryNotFoundException("Repository root not found.");
 
-        var file = Path.Combine(root.FullName, "src", "Robots.Grasshopper", "Resources", "Package", "libraries", "WSG50.xml");
+        var file = Path.Combine(root.FullName, "src", "Robots.Grasshopper", "Resources", "Package", "libraries", $"{name}.xml");
         var element = XDocument.Load(file).Root!.Element("Tool")!;
         using var meshes = File3dm.Read(Path.ChangeExtension(file, ".3dm"));
         var tool = FileIO.ParseTool(element.ToString(), meshes);
 
         Assert.Multiple(() =>
         {
-            Assert.That(tool.Name, Is.EqualTo("WSG50"));
-            Assert.That(tool.Tcp.Origin, Is.EqualTo(new Point3d(0, 0, 122)));
+            Assert.That(tool.Name, Is.EqualTo(name));
+            Assert.That(tool.Tcp.Origin, Is.EqualTo(new Point3d(0, 0, tcpZ)));
             Assert.That(tool.Jaws, Has.Count.EqualTo(2));
             Assert.That(tool.Opening, Is.EqualTo(new Interval(5.4, 110)));
             Assert.That(tool.Mesh.VertexColors, Has.Count.EqualTo(tool.Mesh.Vertices.Count));
-            Assert.That(Path.Combine(Path.GetDirectoryName(file)!, "WSG50.NOTICE.txt"), Does.Exist);
+            Assert.That(Path.Combine(Path.GetDirectoryName(file)!, $"{name}.NOTICE.txt"), Does.Exist);
         });
     }
 

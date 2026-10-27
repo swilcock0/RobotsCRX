@@ -1,4 +1,8 @@
-﻿- version: 0.4.4
+﻿- version: 0.4.5
+  changes:
+  - Added the WSG50_Sila gripper tool to Load Tool: the Schunk WSG 50 with the modified BeamFinger fingers, 100 mm wide and 15 mm shorter, with the TCP 117 mm from the flange.
+
+- version: 0.4.4
   changes:
   - A piece of the environment the robot's base sits on, such as its pedestal, is its mount, which the first link, turning on it about J1, may touch too. Before, a pedestal reaching up past the base made every target collide with link 1, and collision avoidance tried every option for nothing.
   - Collision avoidance plans faster, with the same robot code and warnings as before: a cell of 10 pick and places with a wall plans in about 2.5 seconds. Joint moves are checked in steps as long as the arm, tool and held part are far from everything, which still cannot step over an obstacle; joint routing skips the poses those checks show are clear; the final program is planned once rather than twice; and lifted options stop checking at their first collision.
