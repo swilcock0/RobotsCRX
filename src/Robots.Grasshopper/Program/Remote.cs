@@ -25,7 +25,10 @@ public class Remote() : Component(
         _ = pManager.AddBooleanParameter("Upload", "U", "Upload the program.", GH_ParamAccess.item, false);
         _ = pManager.AddBooleanParameter("Play", "P", "Start or resume the program.", GH_ParamAccess.item, false);
         _ = pManager.AddBooleanParameter("Pause", "S", "Pause the program.", GH_ParamAccess.item, false);
+        _ = pManager.AddTextParameter("Gripper IP", "G", "Fanuc: IP address of a Weiss Robotics WSG gripper, such as the Schunk WSG 50, for the program's Set Gripper commands to drive while streaming. The robot stops at each Set Gripper and waits for the gripper to finish: a move, a grasp when it picks up a part, or a release when it lets go. If a gripper command fails, the gripper's fault is acknowledged, it opens, and the robot stops. The gripper keeps its own force limit and must be homed, and no other client, such as the ROS driver, can be connected to it.", GH_ParamAccess.item);
+        _ = pManager.AddNumberParameter("Gripper Speed", "GS", "Finger speed of the gripper, in millimeters per second.", GH_ParamAccess.item, 50);
         pManager[1].Optional = true;
+        pManager[5].Optional = true;
     }
 
     protected override void RegisterOutputParams(GH_OutputParamManager pManager)
@@ -47,6 +50,17 @@ public class Remote() : Component(
         }
 
         remote.IP = DA.Maybe<string>(1);
+        var gripperIP = DA.Maybe<string>(5);
+
+        if (remote is IRemoteGripper gripper)
+        {
+            gripper.GripperIP = gripperIP;
+            gripper.GripperSpeed = DA.Get(6, 50.0);
+        }
+        else if (gripperIP is not null)
+        {
+            throw new NotSupportedException("Driving a gripper is not supported for this robot.");
+        }
 
         bool upload = DA.Get(2, false);
         bool play = DA.Get(3, false);

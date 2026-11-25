@@ -35,3 +35,17 @@ public interface IRemoteFollow
     /// </summary>
     void Follow(double[] joints);
 }
+
+public interface IRemoteGripper
+{
+    /// <summary>
+    /// IP address of a Weiss Robotics WSG gripper, such as the Schunk WSG 50, that
+    /// the program's Set Gripper commands drive, or null for none.
+    /// </summary>
+    string? GripperIP { get; set; }
+
+    /// <summary>
+    /// Finger speed of the gripper's moves, grasps and releases, in millimeters per second.
+    /// </summary>
+    double GripperSpeed { get; set; }
+}

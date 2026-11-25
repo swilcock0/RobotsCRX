@@ -7,9 +7,11 @@ namespace Robots;
 /// and checks the program against the controller's limits, Play starts the
 /// controller's STREAM_MOTN program through RMI and streams the joints, and Pause
 /// brings the robot to a controlled stop. Following streams joints that can change
-/// while the robot moves, such as from Grasshopper.
+/// while the robot moves, such as from Grasshopper. With a gripper IP, the program's
+/// Set Gripper commands drive a WSG gripper: the robot stops at each and waits for
+/// the gripper to finish.
 /// </summary>
-public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifier, IDisposable
+public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteGripper, IRemoteNotifier, IDisposable
 {
     const string StreamProgramName = "STREAM_MOTN";
 
@@ -24,6 +26,9 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
     static readonly TimeSpan RmiTimeout = TimeSpan.FromSeconds(5);
     static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(2);
 
+    // The slowest finger speed, 5 mm/s, crosses the WSG 50's 110 mm stroke in 22 s.
+    static readonly TimeSpan GripperTimeout = TimeSpan.FromSeconds(30);
+
     readonly object _sync = new();
     Prepared? _prepared;
     Thread? _thread;
@@ -31,16 +36,20 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
     double[]? _streamedJoints;
     RobotArm? _followRobot;
     double[]? _target;
+    string? _failure;
     bool _disposed;
 
     public List<string> Log { get; } = [];
     public Action? Update { get; set; }
     public string? IP { get; set; }
+    public string? GripperIP { get; set; }
+    public double GripperSpeed { get; set; } = 50;
 
     internal int StreamPort { get; init; } = StreamMotionConnection.DefaultPort;
     internal int RmiPort { get; init; } = RmiConnection.DefaultPort;
+    internal int GripperPort { get; init; } = WsgGripper.DefaultPort;
 
-    sealed record Prepared(string Host, RobotArm Robot, StreamMotionTrajectory Trajectory, StreamMotionLimits Limits);
+    sealed record Prepared(string Host, string? GripperHost, double GripperSpeed, RobotArm Robot, StreamMotionTrajectory Trajectory, StreamMotionLimits Limits);
 
     // A started Stream Motion session, with the robot holding the reported position.
     sealed record Session(StreamMotionConnection Connection, StreamMotionStatus Status, double[] Current, StreamMotionLimits Limits, double Period);
@@ -56,6 +65,12 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
             }
 
             string host = Host();
+            string? gripperHost = string.IsNullOrWhiteSpace(GripperIP) ? null : GripperIP;
+            double gripperSpeed = GripperSpeed;
+
+            if (gripperHost is not null && !(gripperSpeed > 0 && double.IsFinite(gripperSpeed)))
+                throw new InvalidOperationException("The gripper speed must be positive.");
+
             var robot = GetRobot(program);
             var simulated = (Program)program;
 
@@ -66,15 +81,24 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
             var limits = Clamp(connection.GetLimits(JointCount), robot);
             double period = capability.SamplingRate / 1000.0;
 
-            var reference = StreamMotionTrajectory.Sample(simulated, robot, period);
-            var trajectory = StreamMotionTrajectory.Create(reference, limits, period);
+            var samples = StreamMotionTrajectory.Sample(simulated, robot, period);
+            var trajectory = StreamMotionTrajectory.Create(samples, limits, period);
 
             lock (_sync)
-                _prepared = new(host, robot, trajectory, limits);
+                _prepared = new(host, gripperHost, gripperSpeed, robot, trajectory, limits);
 
             LogUpdate($"Program ready: {trajectory.Duration:0.0} s at {capability.SamplingRate} ms, Stream Motion version {capability.Version}.");
             LogUpdate($"Smoothing {trajectory.FirstWindow * period:0.00} s + {trajectory.SecondWindow * period:0.00} s, largest deviation from the program {trajectory.MaxDeviation:0.###} deg.");
             LogUpdate($"Peak use of controller limits: velocity {Usage(trajectory.PeakVelocity, limits.Velocity)}, acceleration {Usage(trajectory.PeakAcceleration, limits.Acceleration)}, jerk {Usage(trajectory.PeakJerk, limits.Jerk)}.");
+
+            int gripperCommands = trajectory.Grippers.Length;
+
+            if (gripperCommands > 0)
+            {
+                LogUpdate(gripperHost is null
+                    ? $"Warning: The robot stops at the program's {gripperCommands} Set Gripper commands, but no gripper is connected. Set the gripper IP to drive it."
+                    : $"The robot stops at the program's {gripperCommands} Set Gripper commands and waits for the gripper, at {gripperSpeed:0.#} mm/s.");
+            }
         }
         catch (Exception e)
         {
@@ -103,9 +127,9 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
                 return;
             }
 
-            if (prepared.Host != IP)
+            if (prepared.Host != IP || prepared.GripperHost != (string.IsNullOrWhiteSpace(GripperIP) ? null : GripperIP) || prepared.GripperSpeed != GripperSpeed)
             {
-                LogUpdate("Error: The IP changed since the upload. Upload the program again.");
+                LogUpdate("Error: The IP or gripper changed since the upload. Upload the program again.");
                 return;
             }
 
@@ -143,7 +167,7 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
         lock (_sync)
         {
             if (!IsRunning || _followRobot is not { } robot)
-                throw new InvalidOperationException("Not following. Start following again.");
+                throw new InvalidOperationException($"Not following{(_failure is { } failure ? $": {failure}" : ".")} Start following again.");
 
             var target = ToDegrees(robot, joints);
 
@@ -159,6 +183,7 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
     {
         _stopRequested = false;
         _streamedJoints = null;
+        _failure = null;
         _thread = new(() => Run(host, robot, motion))
         {
             IsBackground = true,
@@ -258,6 +283,9 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
         }
         catch (Exception e)
         {
+            lock (_sync)
+                _failure = e.Message;
+
             LogUpdate($"Error: {e.Message}");
         }
         finally
@@ -270,11 +298,15 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
     {
         var trajectory = WithApproach(prepared, session.Current, out bool approaching);
 
+        using var gripper = prepared.GripperHost is { } gripperHost
+            ? new WsgGripper(gripperHost, GripperPort, RmiTimeout, GripperTimeout)
+            : null;
+
         if (approaching)
             LogUpdate("Moving to the program start at reduced speed.");
 
         LogUpdate("Streaming.");
-        Stream(session, trajectory);
+        Stream(session, trajectory, gripper, prepared.GripperSpeed);
         LogUpdate(_stopRequested ? "Stopped." : "Program finished.");
     }
 
@@ -303,7 +335,8 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
     static StreamMotionTrajectory WithApproach(Prepared prepared, double[] current, out bool approaching)
     {
         var program = prepared.Trajectory;
-        var start = program.Reference[0];
+        var samples = program.Samples;
+        var start = samples.Joints[0];
         approaching = current.Where((value, axis) => Math.Abs(value - start[axis]) > StartTolerance).Any();
 
         if (!approaching)
@@ -318,23 +351,91 @@ public class RemoteFanuc : IRemote, IRemoteJoints, IRemoteFollow, IRemoteNotifie
         }
 
         var approach = StreamMotionTrajectory.Approach(current, start, prepared.Limits, program.Period);
-        double[][] reference = [.. approach, .. program.Reference.Skip(1)];
-        return StreamMotionTrajectory.Create(reference, prepared.Limits, program.Period);
+        int shift = approach.Length - 1;
+        ProgramSamples withApproach = new(
+            [.. approach, .. samples.Joints.Skip(1)],
+            [.. samples.Grippers.Select(gripper => gripper with { Index = gripper.Index + shift })]);
+
+        return StreamMotionTrajectory.Create(withApproach, prepared.Limits, program.Period);
     }
 
-    void Stream(Session session, StreamMotionTrajectory trajectory)
+    /// <summary>
+    /// Streams the trajectory, holding the robot at each gripper command until the
+    /// gripper has finished. A failed gripper command stops the robot.
+    /// </summary>
+    void Stream(Session session, StreamMotionTrajectory trajectory, WsgGripper? gripper, double gripperSpeed)
     {
         var reference = trajectory.Reference;
+        var grippers = trajectory.Grippers;
         JerkFilter filter = new(trajectory.FirstWindow, trajectory.SecondWindow, session.Current);
         int index = 0;
+        int nextGripper = 0;
+        Task? gripping = null;
 
         Stream(session, filter.SettleSamples, () =>
         {
+            if (gripping is not null)
+            {
+                if (!gripping.IsCompleted)
+                    return filter.Push(reference[index]);
+
+                if (gripping.Exception?.InnerException is { } error)
+                {
+                    lock (_sync)
+                        _failure = error.Message;
+
+                    LogUpdate($"Error: {error.Message} The gripper was opened and the robot stopped.");
+                    _stopRequested = true;
+                }
+
+                gripping = null;
+            }
+
+            if (!_stopRequested && nextGripper < grippers.Length && grippers[nextGripper].Index == index)
+            {
+                var command = grippers[nextGripper++];
+
+                if (gripper is not null)
+                {
+                    LogUpdate($"Gripper {command.Action.ToString().ToLowerInvariant()} to {command.Opening:0.#} mm.");
+                    gripping = Task.Run(() => RunGripper(gripper, command, gripperSpeed));
+                    return filter.Push(reference[index]);
+                }
+            }
+
             if (!_stopRequested && index < reference.Length - 1)
                 index++;
 
             return filter.Push(reference[index]);
-        }, () => _stopRequested || index == reference.Length - 1);
+        }, () => _stopRequested || (index == reference.Length - 1 && gripping is null));
+    }
+
+    /// <summary>
+    /// On a failure, such as a blocked move or no part found, acknowledges the
+    /// fault and opens the gripper, letting go of any part.
+    /// </summary>
+    static void RunGripper(WsgGripper gripper, GripperEvent command, double speed)
+    {
+        try
+        {
+            switch (command.Action)
+            {
+                case GripperAction.Move:
+                    gripper.Move(command.Opening, speed);
+                    break;
+                case GripperAction.Grasp:
+                    gripper.Grasp(command.Opening, speed);
+                    break;
+                case GripperAction.Release:
+                    gripper.Release(command.Opening, speed);
+                    break;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            gripper.Recover(speed);
+            throw;
+        }
     }
 
     /// <summary>

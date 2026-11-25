@@ -229,15 +229,34 @@ public class Program : IProgram
     public Mesh[] CurrentParts()
     {
         var pose = CurrentSimulationPose;
-        var systemTarget = Targets[pose.TargetIndex];
-        bool atTarget = IsAtTarget(pose, systemTarget);
+        return [.. _grippedParts.Select(part => part.Pose(CurrentGripper(part.Group).Events, pose.Kinematics[part.Group]))];
+    }
 
-        return [.. _grippedParts.Select(part =>
-        {
-            var target = systemTarget.ProgramTargets[part.Group];
-            var gripper = atTarget ? target.GripperAtTarget : target.Gripper;
-            return part.Pose(gripper.Events, pose.Kinematics[part.Group]);
-        })];
+    /// <summary>
+    /// The gripper of a robot group at the current simulation time.
+    /// </summary>
+    internal GripperState CurrentGripper(int group)
+    {
+        var pose = CurrentSimulationPose;
+        var systemTarget = Targets[pose.TargetIndex];
+        var target = systemTarget.ProgramTargets[group];
+        return IsAtTarget(pose, systemTarget) ? target.GripperAtTarget : target.Gripper;
+    }
+
+    /// <summary>
+    /// When the gripper took its state at the current simulation time: when the
+    /// robot reached the target, before its waits, or for run-before commands,
+    /// when it left the previous target.
+    /// </summary>
+    internal double CurrentGripperStart()
+    {
+        var pose = CurrentSimulationPose;
+        var systemTarget = Targets[pose.TargetIndex];
+
+        if (IsAtTarget(pose, systemTarget))
+            return systemTarget.TotalTime - ProgramMotionPlanner.LongestWaitTime(systemTarget, runBefore: false);
+
+        return pose.TargetIndex > 0 ? Targets[pose.TargetIndex - 1].TotalTime : 0;
     }
 
     /// <summary>

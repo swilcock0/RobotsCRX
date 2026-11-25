@@ -22,6 +22,10 @@ class RemoteFanucTests
     static readonly string[] StreamRmiCommands =
         ["FRC_Connect_STMO", "FRC_GetStatus", "FRC_Reset", "FRC_Initialize", "FRC_Call STREAM_MOTN", "FRC_Abort", "FRC_Disconnect"];
 
+    // fanuc_driver's recovery when FRC_Initialize fails: abort, reset, read the status and initialize again.
+    static readonly string[] RetriedRmiCommands =
+        ["FRC_Connect_STMO", "FRC_GetStatus", "FRC_Reset", "FRC_Initialize", "FRC_Abort", "FRC_Reset", "FRC_GetStatus", "FRC_Initialize", "FRC_Call STREAM_MOTN", "FRC_Abort", "FRC_Disconnect"];
+
     [Test]
     public void StreamsProgramWithinControllerLimits()
     {
@@ -248,6 +252,211 @@ class RemoteFanucTests
         Assert.That(controller.Commands[^1].Joints[..6], Is.EqualTo(near).Within(1e-6));
     }
 
+    [Test]
+    public void RestsAtAPoseForTheProgramsWait()
+    {
+        using FakeController controller = new(Start);
+        var (system, remote) = CreateRemote(controller);
+        var robot = ((IndustrialSystem)system).MechanicalGroups[0].Robot;
+        double[] middle = [.. Start.Zip(End, (a, b) => (a + b) / 2)];
+        const double wait = 0.3;
+        Speed speed = new(time: 1.5);
+
+        Program program = new("Wait", system, [TestRobots.Toolpath(Target(Start), Target(middle, new Commands.Wait(wait)), Target(End))]);
+        Assert.That(program.Errors, Is.Empty);
+
+        remote.Upload(program);
+        remote.Play();
+        WaitForStream(remote);
+
+        var commands = controller.Commands;
+        int atMiddle = commands.Count(c => c.Joints[..6].Zip(middle, (a, b) => Math.Abs(a - b)).Max() < 1e-6);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Program finished."), Log(remote));
+            Assert.That(atMiddle * Period, Is.GreaterThanOrEqualTo(wait));
+            Assert.That(commands[^1].Joints[..6], Is.EqualTo(End).Within(1e-6));
+        });
+
+        AssertWithinLimits(commands);
+
+        JointTarget Target(double[] degrees, Command? command = null)
+        {
+            return new([.. degrees.Select(robot.DegreeToRadian)], speed: speed, command: command);
+        }
+    }
+
+    [Test]
+    public void WsgChecksumMatchesTheDriver()
+    {
+        // wsg_50_driver starts checking a received packet from this value, the checksum of the preamble.
+        Assert.That(WsgGripper.Crc([0xAA, 0xAA, 0xAA]), Is.EqualTo(0x50F5));
+    }
+
+    [Test]
+    public void WaitsAtThePoseForTheGripperToGrasp()
+    {
+        using FakeController controller = new(Start);
+        using FakeGripper gripper = new() { Delay = TimeSpan.FromSeconds(0.3) };
+        var (system, remote) = CreateRemote(controller, gripper);
+        double[] middle = [.. Start.Zip(End, (a, b) => (a + b) / 2)];
+
+        remote.Upload(CreatePickProgram(system, middle, wait: 0.3));
+        remote.Play();
+        WaitForStream(remote);
+
+        var commands = controller.Commands;
+        var (received, finished) = gripper.Motions.Single();
+        var gripping = commands.Where(c => c.Time >= received && c.Time <= finished).ToArray();
+        var afterwards = commands.Where(c => c.Time > finished).ToArray();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Program finished."), Log(remote));
+            Assert.That(remote.Log, Has.Some.Contains("Gripper grasp to 20 mm."));
+            Assert.That(gripper.Commands, Is.EqualTo(new[] { (0x53, 0f), (0x25, 20f) }));
+
+            // At rest at the pose before and while the gripper moves, then for the program's wait.
+            Assert.That(IsAt(commands.Last(c => c.Time < received), middle), Is.True);
+            Assert.That(gripping, Is.Not.Empty.And.All.Matches<FakeController.Command>(c => IsAt(c, middle)));
+            Assert.That(afterwards.TakeWhile(c => IsAt(c, middle)).Count() * Period, Is.GreaterThanOrEqualTo(0.3));
+            Assert.That(commands[^1].Joints[..6], Is.EqualTo(End).Within(1e-6));
+        });
+
+        AssertWithinLimits(commands);
+    }
+
+    [Test]
+    public void OpensTheGripperAndStopsWhenAGraspFails()
+    {
+        using FakeController controller = new(Start);
+        using FakeGripper gripper = new() { Failing = 0x25 };
+        var (system, remote) = CreateRemote(controller, gripper);
+        double[] middle = [.. Start.Zip(End, (a, b) => (a + b) / 2)];
+
+        remote.Upload(CreatePickProgram(system, middle, wait: 0.3));
+        remote.Play();
+        WaitForStream(remote, "Stopped.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Gripper grasp failed: command failed; for a grasp, no part was found (status 18). The gripper was opened and the robot stopped."), Log(remote));
+            Assert.That(gripper.Commands, Is.EqualTo(new[] { (0x53, 0f), (0x25, 20f), (0x24, 0f), (0x21, 109f) }));
+            Assert.That(controller.Commands[^1].Joints[..6], Is.EqualTo(middle).Within(1e-6));
+            Assert.That(controller.Commands[^1].IsLast, Is.True);
+        });
+    }
+
+    [Test]
+    public void SetsTheInitOpeningBeforeMoving()
+    {
+        using FakeController controller = new(Start);
+        using FakeGripper gripper = new() { Delay = TimeSpan.FromSeconds(0.2) };
+        var (system, remote) = CreateRemote(controller, gripper);
+        double[] middle = [.. Start.Zip(End, (a, b) => (a + b) / 2)];
+
+        remote.Upload(CreatePickProgram(system, middle, wait: 0, init: new Commands.SetGripper(60)));
+        remote.Play();
+        WaitForStream(remote);
+
+        var commands = controller.Commands;
+        var (received, finished) = gripper.Motions[0];
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Program finished."), Log(remote));
+            Assert.That(gripper.Commands, Is.EqualTo(new[] { (0x53, 0f), (0x21, 60f), (0x25, 20f) }));
+            Assert.That(commands.Where(c => c.Time <= finished), Is.All.Matches<FakeController.Command>(c => IsAt(c, Start)));
+            Assert.That(commands[^1].Joints[..6], Is.EqualTo(End).Within(1e-6));
+        });
+    }
+
+    [Test]
+    public void StopsAtSetGripperWithoutAGripper()
+    {
+        using FakeController controller = new(Start);
+        var (system, remote) = CreateRemote(controller);
+        double[] middle = [.. Start.Zip(End, (a, b) => (a + b) / 2)];
+
+        remote.Upload(CreatePickProgram(system, middle, wait: 0));
+        remote.Play();
+        WaitForStream(remote);
+
+        var commands = controller.Commands;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("no gripper is connected"), Log(remote));
+            Assert.That(remote.Log, Has.Some.Contains("Program finished."));
+            Assert.That(commands.Any(c => IsAt(c, middle)), Is.True);
+        });
+
+        AssertWithinLimits(commands);
+    }
+
+    static bool IsAt(FakeController.Command command, double[] joints) =>
+        command.Joints[..6].Zip(joints, (a, b) => Math.Abs(a - b)).Max() < 1e-6;
+
+    static Program CreatePickProgram(RobotSystem system, double[] middle, double wait, Command? init = null)
+    {
+        var robot = ((IndustrialSystem)system).MechanicalGroups[0].Robot;
+        var tool = GripperTests.CreateGripper();
+        Speed speed = new(time: 1.5);
+        Mesh part = new();
+        _ = part.Vertices.Add(500, 0, 300);
+        _ = part.Vertices.Add(510, 0, 300);
+        _ = part.Vertices.Add(500, 10, 300);
+        _ = part.Faces.AddFace(0, 1, 2);
+        Command grasp = wait > 0 ? new Commands.Group([new Commands.SetGripper(20, part), new Commands.Wait(wait)]) : new Commands.SetGripper(20, part);
+
+        JointTarget Target(double[] degrees, Command? command = null)
+        {
+            return new([.. degrees.Select(robot.DegreeToRadian)], tool, speed, command: command);
+        }
+
+        Program program = new("Pick", system, [TestRobots.Toolpath(Target(Start), Target(middle, grasp), Target(End))], init is null ? null : new Commands.Group([init]));
+        Assert.That(program.Errors, Is.Empty);
+        return program;
+    }
+
+    [Test]
+    public void RetriesInitializingAfterAbortingAsFanucDriverDoes()
+    {
+        using FakeController controller = new(Start) { InitializeFailures = 1 };
+        var (system, remote) = CreateRemote(controller);
+
+        remote.Upload(CreateProgram(system));
+        remote.Play();
+        WaitForStream(remote);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(remote.Log, Has.Some.Contains("Program finished."), Log(remote));
+            Assert.That(controller.RmiCommands, Is.EqualTo(RetriedRmiCommands));
+        });
+    }
+
+    [Test]
+    public void ExplainsWhyFollowingStoppedWhenTheControllerRefusesRmi()
+    {
+        using FakeController controller = new(Start) { InitializeFailures = 2 };
+        var (system, remote) = CreateRemote(controller);
+        double[] near = [.. Start.Select(value => value + 1)];
+
+        remote.StartFollowing(system, Radians(system, near));
+        WaitForStream(remote);
+
+        var error = Assert.Throws<InvalidOperationException>(() => remote.Follow(Radians(system, near)));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(Newest(remote), Does.Contain("cannot execute TP program (error 2556936)").And.Contain("TP is disabled"));
+            Assert.That(error!.Message, Does.StartWith("Not following: RMI FRC_Initialize failed: cannot execute TP program"));
+            Assert.That(controller.Commands, Is.Empty);
+        });
+    }
+
     static double[] Radians(RobotSystem system, double[] degrees) =>
         [.. degrees.Select((degree, axis) => system.DegreeToRadian(degree, axis))];
 
@@ -264,7 +473,7 @@ class RemoteFanucTests
         }
     }
 
-    static (RobotSystem System, RemoteFanuc Remote) CreateRemote(FakeController controller)
+    static (RobotSystem System, RemoteFanuc Remote) CreateRemote(FakeController controller, FakeGripper? gripper = null)
     {
         var system = TestRobots.FanucCrx10();
         controller.Robot = ((IndustrialSystem)system).MechanicalGroups[0].Robot;
@@ -273,7 +482,9 @@ class RemoteFanucTests
         {
             StreamPort = controller.StreamPort,
             RmiPort = controller.RmiPort,
-            IP = "127.0.0.1"
+            GripperPort = gripper?.Port ?? WsgGripper.DefaultPort,
+            IP = "127.0.0.1",
+            GripperIP = gripper is null ? null : "127.0.0.1"
         };
 
         return (system, remote);
@@ -290,11 +501,16 @@ class RemoteFanucTests
         return program;
     }
 
-    static void WaitForStream(RemoteFanuc remote)
+    /// <summary>
+    /// Waits until the stream ends, or until the newest log entry contains <paramref name="until"/>.
+    /// </summary>
+    static void WaitForStream(RemoteFanuc remote, string? until = null)
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
 
-        while (!Newest(remote).Contains("finished.") && !Newest(remote).Contains("Stopped.") && !Newest(remote).Contains("Error"))
+        while (until is null
+            ? !Newest(remote).Contains("finished.") && !Newest(remote).Contains("Stopped.") && !Newest(remote).Contains("Error")
+            : !Newest(remote).Contains(until))
         {
             if (DateTime.UtcNow > deadline)
                 Assert.Fail($"Streaming did not finish.{Environment.NewLine}{Log(remote)}");
@@ -348,7 +564,7 @@ class RemoteFanucTests
     /// </summary>
     sealed class FakeController : IDisposable
     {
-        public record Command(double[] Joints, bool IsLast);
+        public record Command(double[] Joints, bool IsLast, DateTime Time);
 
         readonly UdpClient _udp = new(new IPEndPoint(IPAddress.Loopback, 0));
         readonly TcpListener _rmiListener = new(IPAddress.Loopback, 0);
@@ -368,6 +584,10 @@ class RemoteFanucTests
         public Vector3d PositionOffset { get; init; }
         public (int Count, RemoteFanuc Remote)? PauseAfter { get; set; }
         public uint Version { get; init; } = 3;
+
+        // FRC_Initialize answers "cannot execute TP program" this many times, as when the TP is enabled.
+        public int InitializeFailures { get; set; }
+        public const int CannotExecuteProgram = 2556936;
 
         public int StreamPort => ((IPEndPoint)_udp.Client.LocalEndPoint!).Port;
         public int RmiPort => ((IPEndPoint)_rmiListener.LocalEndpoint).Port;
@@ -447,7 +667,7 @@ class RemoteFanucTests
                 joints[i] = BinaryPrimitives.ReadDoubleBigEndian(packet.AsSpan(16 + i * 8));
 
             bool isLast = packet[12] == 1;
-            _commands.Add(new(joints, isLast));
+            _commands.Add(new(joints, isLast, DateTime.UtcNow));
 
             for (int i = 0; i < 9; i++)
                 _joints[i] = (float)joints[i];
@@ -563,6 +783,12 @@ class RemoteFanucTests
                             response["ProgramStatus"] = 0;
                         else if (command == "FRC_Abort")
                             _programRunning = false;
+
+                        if (command == "FRC_Initialize" && InitializeFailures > 0)
+                        {
+                            InitializeFailures--;
+                            response["ErrorID"] = CannotExecuteProgram;
+                        }
                     }
                     else if (request["Instruction"]?.GetValue<string>() == "FRC_Call")
                     {
@@ -591,6 +817,123 @@ class RemoteFanucTests
             _udp.Dispose();
             _rmiListener.Stop();
             _sessionListener.Stop();
+        }
+    }
+
+    /// <summary>
+    /// Loopback stand-in for a WSG gripper. Motion commands answer pending, then
+    /// succeed after <see cref="Delay"/>, or fail with "command failed" if they are
+    /// the <see cref="Failing"/> command.
+    /// </summary>
+    sealed class FakeGripper : IDisposable
+    {
+        readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        readonly List<(int Id, float Width)> _commands = [];
+        readonly List<(DateTime Received, DateTime Finished)> _motions = [];
+        readonly CancellationTokenSource _cancel = new();
+
+        public TimeSpan Delay { get; init; }
+        public int? Failing { get; init; }
+        public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+        public List<(int Id, float Width)> Commands { get { lock (_commands) return [.. _commands]; } }
+
+        /// <summary>
+        /// When each motion command arrived and when it finished.
+        /// </summary>
+        public List<(DateTime Received, DateTime Finished)> Motions { get { lock (_commands) return [.. _motions]; } }
+
+        public FakeGripper()
+        {
+            _listener.Start();
+            _ = Task.Run(Serve);
+        }
+
+        async Task Serve()
+        {
+            while (!_cancel.IsCancellationRequested)
+            {
+                TcpClient client;
+
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync(_cancel.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                using var _ = client;
+                var stream = client.GetStream();
+
+                try
+                {
+                    while (true)
+                    {
+                        var header = new byte[6];
+                        await stream.ReadExactlyAsync(header, _cancel.Token);
+                        int length = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(4));
+                        var rest = new byte[length + 2];
+                        await stream.ReadExactlyAsync(rest, _cancel.Token);
+                        Assert.That(WsgGripper.Crc(rest, WsgGripper.Crc(header)), Is.Zero, "Checksum");
+
+                        byte id = header[3];
+                        float width = id switch
+                        {
+                            0x21 => BinaryPrimitives.ReadSingleLittleEndian(rest.AsSpan(1)),
+                            0x25 or 0x26 => BinaryPrimitives.ReadSingleLittleEndian(rest),
+                            _ => 0
+                        };
+
+                        lock (_commands)
+                            _commands.Add((id, width));
+
+                        if (id == 0x53)
+                        {
+                            var limits = new byte[32];
+                            BinaryPrimitives.WriteSingleLittleEndian(limits, 110);
+                            await Reply(stream, id, 0, limits);
+                        }
+                        else if (id is 0x21 or 0x25 or 0x26)
+                        {
+                            var received = DateTime.UtcNow;
+                            await Reply(stream, id, 26, []);
+                            await Task.Delay(Delay, _cancel.Token);
+
+                            lock (_commands)
+                                _motions.Add((received, DateTime.UtcNow));
+
+                            await Reply(stream, id, id == Failing ? (ushort)18 : (ushort)0, []);
+                        }
+                        else
+                        {
+                            await Reply(stream, id, 0, []);
+                        }
+                    }
+                }
+                catch (Exception e) when (e is EndOfStreamException or IOException or OperationCanceledException)
+                {
+                    // The remote closed its connection.
+                }
+            }
+        }
+
+        static async Task Reply(NetworkStream stream, byte id, ushort status, byte[] data)
+        {
+            var packet = new byte[6 + 2 + data.Length + 2];
+            packet.AsSpan(0, 3).Fill(0xAA);
+            packet[3] = id;
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(4), (ushort)(2 + data.Length));
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(6), status);
+            data.CopyTo(packet, 8);
+            BinaryPrimitives.WriteUInt16LittleEndian(packet.AsSpan(packet.Length - 2), WsgGripper.Crc(packet.AsSpan(0, packet.Length - 2)));
+            await stream.WriteAsync(packet);
+        }
+
+        public void Dispose()
+        {
+            _cancel.Cancel();
+            _listener.Stop();
         }
     }
 }

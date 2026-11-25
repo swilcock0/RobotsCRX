@@ -37,13 +37,13 @@ sealed class RmiConnection : IDisposable
 
     /// <summary>
     /// Mirrors fanuc_driver's startRMI: aborts a held or canceled RMI program,
-    /// then resets and initializes remote motion for group 1.
+    /// then resets and initializes remote motion for group 1. If initializing
+    /// fails, it aborts, resets and tries once more, as a left-over RMI program
+    /// can block it.
     /// </summary>
     public void Initialize()
     {
-        var status = Command("FRC_GetStatus");
-        int programStatus = status["ProgramStatus"]?.GetValue<int>()
-            ?? throw new InvalidDataException("RMI status has no program status.");
+        int programStatus = ProgramStatus();
 
         if (programStatus is 1 or 2)
             _ = Command("FRC_Abort");
@@ -51,9 +51,34 @@ sealed class RmiConnection : IDisposable
             throw new InvalidDataException($"Unexpected RMI program status {programStatus}.");
 
         _ = Command("FRC_Reset");
-        _ = Request(new() { ["Command"] = "FRC_Initialize", ["GroupMask"] = 1 }, "Command");
+
+        try
+        {
+            InitializeRemoteMotion();
+        }
+        catch (RmiException)
+        {
+            _ = Command("FRC_Abort");
+            _ = Command("FRC_Reset");
+            _ = ProgramStatus();
+
+            try
+            {
+                InitializeRemoteMotion();
+            }
+            catch (RmiException e)
+            {
+                throw new RmiException($"{e.Message} On the teach pendant, check that the TP is disabled, the mode is AUTO, alarms are reset and no program is running or paused.", e);
+            }
+        }
+
         _sequence = 1;
     }
+
+    int ProgramStatus() => Command("FRC_GetStatus")["ProgramStatus"]?.GetValue<int>()
+        ?? throw new InvalidDataException("RMI status has no program status.");
+
+    void InitializeRemoteMotion() => _ = Request(new() { ["Command"] = "FRC_Initialize", ["GroupMask"] = 1 }, "Command");
 
     /// <summary>
     /// Calls a TP program without waiting for it to finish, as the program keeps
@@ -94,7 +119,7 @@ sealed class RmiConnection : IDisposable
             int error = response["ErrorID"]?.GetValue<int>() ?? 0;
 
             if (error != 0)
-                throw new InvalidOperationException($"RMI {name} failed with error {error}.");
+                throw new RmiException($"RMI {name} failed: {ErrorText(error)} (error {error}).");
 
             return response;
         }
@@ -160,4 +185,36 @@ sealed class RmiConnection : IDisposable
     }
 
     public void Dispose() => _client.Dispose();
+
+    // From fanuc_driver's rmi library.
+    static string ErrorText(int error) => error switch
+    {
+        2556929 => "internal system error",
+        2556930 => "invalid UTool number",
+        2556931 => "invalid UFrame number",
+        2556932 => "invalid position register",
+        2556933 => "invalid speed override",
+        2556934 or 2556936 => "cannot execute TP program",
+        2556935 => "controller servo is off",
+        2556937 => "RMI is not running",
+        2556938 => "TP program is not paused",
+        2556939 => "cannot resume TP program",
+        2556940 => "cannot reset controller",
+        2556941 => "invalid RMI command",
+        2556942 => "RMI command fail",
+        2556943 => "invalid controller state",
+        2556944 => "please cycle power",
+        2556945 => "invalid payload schedule",
+        2556948 => "invalid RMI instruction",
+        2556952 => "RMI is in HOLD state",
+        2556953 => "remote device disconnected",
+        2556954 => "robot is already connected",
+        2556971 => "robot in single step mode",
+        2556981 => "invalid call program name",
+        7004 => "the program is in use",
+        7015 => "RMI_MOVE is the selected TP program; select a different TP program",
+        _ => "unknown error"
+    };
 }
+
+class RmiException(string message, Exception? inner = null) : InvalidOperationException(message, inner);

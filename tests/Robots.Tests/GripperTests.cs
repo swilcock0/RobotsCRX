@@ -290,7 +290,7 @@ public class GripperTests
         return new("Gripper", system, [TestRobots.Toolpath(start, end)]);
     }
 
-    static Tool CreateGripper()
+    internal static Tool CreateGripper()
     {
         using File3dm doc = new();
         AddMesh(doc, "Tool.Gripper", Box(-5, 5));

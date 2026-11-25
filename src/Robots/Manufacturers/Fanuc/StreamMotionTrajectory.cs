@@ -125,6 +125,19 @@ sealed class JointFollower
     public double[] Hold() => _filter.Push(_reference);
 }
 
+enum GripperAction { Move, Grasp, Release }
+
+/// <summary>
+/// A gripper command to an opening in millimeters, at a sample of the program or,
+/// in a trajectory, at the reference sample where the robot rests at its pose.
+/// </summary>
+readonly record struct GripperEvent(int Index, GripperAction Action, double Opening);
+
+/// <summary>
+/// A program's joints in controller degrees, one per period, and its gripper commands.
+/// </summary>
+readonly record struct ProgramSamples(double[][] Joints, GripperEvent[] Grippers);
+
 /// <summary>
 /// A program sampled at the Stream Motion period in controller degrees, with
 /// filter windows chosen so the streamed motion stays within the joint limits.
@@ -140,8 +153,27 @@ sealed class StreamMotionTrajectory
     const double FirstWindowTime = 0.08;
     const double MaximumWindowTime = 2.56;
 
+    // Degrees within which consecutive samples are a stop.
+    const double StopTolerance = 1e-6;
+
     public double Period { get; }
+
+    /// <summary>
+    /// The program's samples, before its stops are lengthened.
+    /// </summary>
+    public ProgramSamples Samples { get; }
+
+    /// <summary>
+    /// The samples streamed through the filter, with each stop inside the program
+    /// and each gripper command lengthened by the filter's settle samples.
+    /// </summary>
     public double[][] Reference { get; }
+
+    /// <summary>
+    /// The gripper commands at the reference samples where the robot has come to
+    /// rest at their poses.
+    /// </summary>
+    public GripperEvent[] Grippers { get; }
     public int FirstWindow { get; }
     public int SecondWindow { get; }
     public double[] PeakVelocity { get; }
@@ -151,10 +183,12 @@ sealed class StreamMotionTrajectory
 
     public double Duration => (Reference.Length - 1 + FirstWindow + SecondWindow) * Period;
 
-    StreamMotionTrajectory(double period, double[][] reference, int firstWindow, int secondWindow, double[][] output)
+    StreamMotionTrajectory(double period, ProgramSamples samples, double[][] reference, GripperEvent[] grippers, int firstWindow, int secondWindow, double[][] output)
     {
         Period = period;
+        Samples = samples;
         Reference = reference;
+        Grippers = grippers;
         FirstWindow = firstWindow;
         SecondWindow = secondWindow;
         (PeakVelocity, PeakAcceleration, PeakJerk) = Peaks(output, period);
@@ -162,22 +196,53 @@ sealed class StreamMotionTrajectory
     }
 
     /// <summary>
-    /// Samples a program's joints in controller degrees, one sample per period.
+    /// Samples a program's joints in controller degrees, one sample per period,
+    /// and the gripper commands of its Set Gripper commands. Each gripper command
+    /// gets a sample of its own, at the pose where it takes effect in the simulation.
+    /// A Set Gripper in the init commands moves the gripper at the start.
     /// </summary>
-    public static double[][] Sample(Program program, RobotArm robot, double period)
+    public static ProgramSamples Sample(Program program, RobotArm robot, double period)
     {
         var pose = program.CurrentSimulationPose;
         double previousTime = pose.CurrentTime;
         int count = (int)Math.Ceiling(program.Duration / period) + 1;
-        var samples = new double[count][];
+        List<double[]> joints = new(count);
+        List<GripperEvent> grippers = [];
+        var first = program.Targets[0].ProgramTargets[0];
+
+        // Init commands set the opening, and the program's own commands are counted from there.
+        GripperState gripper = new(first.Gripper.Opening, 0, null);
+
+        if (program.InitCommands.OfType<Commands.SetGripper>().LastOrDefault() is { } init)
+        {
+            var range = first.Target.Tool.Opening;
+            grippers.Add(new(0, GripperAction.Move, Math.Clamp(init.Opening, range.T0, range.T1)));
+        }
 
         try
         {
             for (int i = 0; i < count; i++)
             {
-                program.Animate(Math.Min(i * period, program.Duration), isNormalized: false);
-                var joints = program.CurrentSimulationPose.Kinematics[0].Joints;
-                samples[i] = [.. joints.Select(robot.RadianToDegree)];
+                double time = Math.Min(i * period, program.Duration);
+                program.Animate(time, isNormalized: false);
+                var current = program.CurrentGripper(0);
+
+                if (current.Events != gripper.Events && Action(gripper, current) is { } action)
+                {
+                    // A command that took effect between samples gets a sample at its target's pose.
+                    double start = program.CurrentGripperStart();
+                    grippers.Add(new(joints.Count, action, current.Opening));
+
+                    if (start < time - Util.TimeTol)
+                    {
+                        program.Animate(start, isNormalized: false);
+                        joints.Add(Joints());
+                        program.Animate(time, isNormalized: false);
+                    }
+                }
+
+                joints.Add(Joints());
+                gripper = current;
             }
         }
         finally
@@ -185,7 +250,24 @@ sealed class StreamMotionTrajectory
             program.Animate(previousTime, isNormalized: false);
         }
 
-        return samples;
+        return new([.. joints], [.. grippers]);
+
+        double[] Joints()
+        {
+            return [.. program.CurrentSimulationPose.Kinematics[0].Joints.Select(robot.RadianToDegree)];
+        }
+
+        // A part changing while one is held is not a command the gripper has.
+        static GripperAction? Action(GripperState from, GripperState to)
+        {
+            return (from.Held, to.Held) switch
+            {
+                (null, null) => GripperAction.Move,
+                (null, _) => GripperAction.Grasp,
+                (_, null) => GripperAction.Release,
+                _ => null
+            };
+        }
     }
 
     /// <summary>
@@ -226,12 +308,12 @@ sealed class StreamMotionTrajectory
     /// Chooses the shortest filter windows that keep the streamed motion within
     /// <see cref="LimitScale"/> of the limits.
     /// </summary>
-    public static StreamMotionTrajectory Create(double[][] reference, StreamMotionLimits limits, double period)
+    public static StreamMotionTrajectory Create(ProgramSamples samples, StreamMotionLimits limits, double period)
     {
-        if (reference.Length < 2)
-            throw new ArgumentException("A streamed trajectory needs at least two samples.", nameof(reference));
+        if (samples.Joints.Length < 2)
+            throw new ArgumentException("A streamed trajectory needs at least two samples.", nameof(samples));
 
-        var (referenceVelocity, _, _) = Peaks(reference, period);
+        var (referenceVelocity, _, _) = Peaks(samples.Joints, period);
 
         for (int axis = 0; axis < referenceVelocity.Length; axis++)
         {
@@ -245,11 +327,16 @@ sealed class StreamMotionTrajectory
         {
             int first = Math.Max(2, (int)Math.Round(time / period));
             int second = Math.Max(2, first / 2);
+            int settle = first + second;
+            var (reference, map) = LengthenStops(samples, settle);
             var output = Filter(reference, first, second);
             var (_, acceleration, jerk) = Peaks(output, period);
 
             if (Within(acceleration, limits.Acceleration) && Within(jerk, limits.Jerk))
-                return new(period, reference, first, second, output);
+            {
+                GripperEvent[] grippers = [.. samples.Grippers.Select(gripper => gripper with { Index = map[gripper.Index] + settle })];
+                return new(period, samples, reference, grippers, first, second, output);
+            }
         }
 
         throw new InvalidOperationException("The program needs more smoothing than Stream Motion allows. Reduce the program speed or add zones.");
@@ -259,6 +346,62 @@ sealed class StreamMotionTrajectory
             for (int axis = 0; axis < values.Length; axis++)
             {
                 if (values[axis] > limits[axis] * LimitScale)
+                    return false;
+            }
+
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Lengthens each stop inside the program, such as a wait for the gripper, and
+    /// makes each gripper command a stop, by the filter's settle samples. The
+    /// filter averages over its windows, so a shorter stop would only slow the
+    /// streamed motion near the stopped pose. Lengthened, the motion reaches the
+    /// pose and rests there for as long as the program does, and a gripper command
+    /// can wait at its pose. Also returns where each sample went.
+    /// </summary>
+    static (double[][] Reference, int[] Map) LengthenStops(ProgramSamples program, int settleSamples)
+    {
+        var samples = program.Joints;
+        var grippers = program.Grippers.Select(gripper => gripper.Index).ToHashSet();
+        List<double[]> lengthened = new(samples.Length);
+        var map = new int[samples.Length];
+        int start = 0;
+
+        while (start < samples.Length)
+        {
+            int end = start;
+
+            while (end + 1 < samples.Length && IsSame(samples[end + 1], samples[start]))
+                end++;
+
+            for (int i = start; i <= end; i++)
+            {
+                map[i] = lengthened.Count;
+                lengthened.Add(samples[i]);
+            }
+
+            // The filter already starts at rest and settles after the last sample.
+            bool isStop = end > start && start > 0 && end < samples.Length - 1;
+            bool hasGripper = Enumerable.Range(start, end - start + 1).Any(grippers.Contains);
+
+            if (isStop || hasGripper)
+            {
+                for (int i = 0; i < settleSamples; i++)
+                    lengthened.Add(samples[end]);
+            }
+
+            start = end + 1;
+        }
+
+        return ([.. lengthened], map);
+
+        static bool IsSame(double[] a, double[] b)
+        {
+            for (int axis = 0; axis < a.Length; axis++)
+            {
+                if (Math.Abs(a[axis] - b[axis]) > StopTolerance)
                     return false;
             }
 

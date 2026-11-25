@@ -1,4 +1,10 @@
-﻿- version: 0.4.5
+﻿- version: 0.5.0
+  changes:
+  - Streaming drives a Weiss Robotics WSG gripper, such as the Schunk WSG 50, with the program's Set Gripper commands: set Gripper IP (and optionally Gripper Speed) on Remote Connection. The robot stops at each Set Gripper and waits for the gripper to finish a move, a grasp when it picks up a part, or a release when it lets go. If a gripper command fails, such as a grasp that finds no part, the gripper's fault is acknowledged, it opens and the robot stops. The gripper keeps its own force limit, must be homed, and no other client, such as the ROS driver, can be connected to it.
+  - Streamed programs rest at the program's waits for their full length. Before, the streaming filter averaged a wait shorter than its windows away, so the robot slowed near the pose but never stopped there.
+  - Starting a stream recovers as FANUC's ROS 2 driver does when the controller refuses to initialize remote motion, aborting and trying once more. Errors from the controller are named, with what to check on the teach pendant, and Stream Joints says why it stopped following.
+
+- version: 0.4.5
   changes:
   - Added the WSG50_Sila gripper tool to Load Tool: the Schunk WSG 50 with the modified BeamFinger fingers, 100 mm wide and 15 mm shorter, with the TCP 117 mm from the flange.
 
